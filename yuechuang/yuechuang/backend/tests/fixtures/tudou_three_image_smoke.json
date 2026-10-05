@@ -1,0 +1,65 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "plans": [
+    {
+      "model": "gemini-3-pro-image-preview",
+      "endpoint": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+      "request": {
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "text": "电影感写实摄影，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。自然光，真实毛发，清晰主体，柔和景深，方形构图，无文字、无字幕、无标志。"
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "responseModalities": [
+            "TEXT",
+            "IMAGE"
+          ],
+          "imageConfig": {
+            "aspectRatio": "1:1",
+            "imageSize": "1K"
+          }
+        }
+      },
+      "max_create_attempts": 1,
+      "timeout_seconds": 300,
+      "actual_price_unverified": true
+    },
+    {
+      "model": "gpt-image-2-pro",
+      "endpoint": "/v1/images/generations",
+      "request": {
+        "model": "gpt-image-2-pro",
+        "prompt": "电影感写实摄影，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。自然光，真实毛发，清晰主体，柔和景深，方形构图，无文字、无字幕、无标志。",
+        "n": 1,
+        "size": "1024x1024",
+        "resolution": "1k",
+        "quality": "medium"
+      },
+      "max_create_attempts": 1,
+      "timeout_seconds": 300,
+      "actual_price_unverified": true
+    },
+    {
+      "model": "gpt-image-2.5-flare",
+      "endpoint": "/v1/images/generations",
+      "request": {
+        "model": "gpt-image-2.5-flare",
+        "prompt": "电影感写实摄影，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。自然光，真实毛发，清晰主体，柔和景深，方形构图，无文字、无字幕、无标志。",
+        "n": 1,
+        "size": "1024x1024",
+        "resolution": "1k",
+        "quality": "medium"
+      },
+      "max_create_attempts": 1,
+      "timeout_seconds": 300,
+      "actual_price_unverified": true
+    }
+  ],
+  "contract_note": "Gemini uses provider native documentation; GPT models use standard sync image endpoint stated by catalog. Public gpt-image-2-pro endpoint mapping misspells images as imgaes; use canonical /v1/images/generations. No model fallback or automatic retries."
+}

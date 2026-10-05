@@ -1,0 +1,27 @@
+/* YueChuang experience v2. The approved 2026-10-04 brief is the brand authority. */
+:root {
+  color-scheme:dark;
+  --bg-base:#0f1115; --bg-elev:#17191f; --bg-elev-2:#1e2129;
+  --border-subtle:rgba(255,255,255,.06); --border-default:rgba(255,255,255,.1);
+  --brand-blue-1:#3d8bff; --brand-blue-2:#1e4fe0;
+  --brand:linear-gradient(135deg,#3d8bff 0%,#1e4fe0 100%);
+  --brand-hover:linear-gradient(135deg,#5c9eff 0%,#2e63f5 100%);
+  --brand-active:linear-gradient(135deg,#2f7bf5 0%,#1740c8 100%);
+  --brand-disabled:rgba(61,139,255,.35); --brand-focus:rgba(61,139,255,.45);
+  --brand-glow:radial-gradient(120% 120% at 20% 10%,rgba(61,139,255,.28),rgba(30,79,224,.12) 45%,transparent 70%);
+  --text-primary:rgba(255,255,255,.92); --text-secondary:rgba(255,255,255,.60); --text-tertiary:rgba(255,255,255,.38);
+  --status-success:#22c55e; --status-running:#3b82f6; --status-review:#f59e0b; --status-draft:#6b7280; --status-error:#ef4444;
+  --radius-control:8px; --radius-card:12px; --radius-dialog:16px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-6:24px; --space-8:32px;
+  --font-caption:12px; --font-small:13px; --font-body:14px; --font-section:16px; --font-title:20px;
+  --motion-fast:150ms; --motion-panel:300ms;
+  /* Existing feature styles consume aliases during the page-by-page migration. */
+  --bg-panel:var(--bg-elev); --bg-elevated:var(--bg-elev-2); --surface-base:var(--bg-base); --surface-raised:var(--bg-elev); --surface-soft:#14161b;
+  --bg-0:var(--bg-base); --bg-1:var(--bg-elev); --bg-2:var(--bg-elev-2); --bg-3:#242833;
+  --bg-hover:rgba(255,255,255,.04); --bg-active:rgba(61,139,255,.12);
+  --text-muted:var(--text-secondary); --text-0:var(--text-primary); --text-1:var(--text-primary); --text-2:var(--text-secondary); --text-3:var(--text-tertiary);
+  --border:var(--border-default); --border-strong:rgba(255,255,255,.18);
+  --accent:var(--brand-blue-1); --accent-bg:rgba(61,139,255,.12); --accent-gradient:var(--brand); --on-accent:#fff;
+  --success:var(--status-success); --warning:var(--status-review); --error:var(--status-error);
+  --lp-radius-control:var(--radius-control); --lp-radius-card:var(--radius-card); --lp-radius-feature:var(--radius-dialog);
+}

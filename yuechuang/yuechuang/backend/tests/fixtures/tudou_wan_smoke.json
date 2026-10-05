@@ -1,0 +1,17 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "request": {
+    "model": "wan3.0",
+    "prompt": "竖屏电影镜头，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。镜头平稳，自然光，动作连贯，无文字、无字幕、无标志。",
+    "duration": 2,
+    "aspect_ratio": "9:16",
+    "resolution": "720p",
+    "extra": {"aspect_ratio": "9:16", "resolution": "720p"}
+  },
+  "request_timeout_seconds": 120,
+  "poll_interval_seconds": 10,
+  "poll_timeout_seconds": 900,
+  "pricing_note": "2026-09-30 pricing variants: CNY 0.30/second at 720p; estimate CNY 0.60 for default/svip. Model description still says 0.20; actual billing unverified.",
+  "contract_note": "User-selected wan3.0 is listed by authenticated /v1/models. Public Wan documentation permits text-to-video on all variants, 2-30 seconds. Exactly one create; no automatic fallback.",
+  "documentation": "https://docs.ai-tudou.net/wan3.0-video-api%EF%BC%88net%EF%BC%89-docs.html"
+}

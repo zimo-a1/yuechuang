@@ -1,0 +1,16 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "request": {
+    "model": "seedance-2.0-fast",
+    "prompt": "竖屏电影镜头，一只橘猫在阳光照耀的草地上缓缓走过，停下来抬头看一只蝴蝶。镜头平稳缓慢推进，自然光，动作连贯，无文字、无字幕、无标志。",
+    "duration": 4,
+    "aspect_ratio": "9:16",
+    "resolution": "720p"
+  },
+  "request_timeout_seconds": 60,
+  "poll_interval_seconds": 10,
+  "poll_timeout_seconds": 900,
+  "pricing_note": "2026-09-30 public standard/default price: CNY 0.25/second; estimated CNY 1.00. Actual billing unverified.",
+  "contract_note": "Model advertised as asynchronous video. Probe the platform /v1/videos/generations endpoint once; Seedance-specific contract is not publicly documented. No automatic fallback or creation retries.",
+  "documentation": "https://api.ai-tudou.net/pricing"
+}

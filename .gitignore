@@ -1,0 +1,57 @@
+# ── macOS ──
+.DS_Store
+._*
+
+# ── 依赖 ──
+node_modules/
+.venv/
+.venv.broken/
+venv/
+
+# ── 构建产物 ──
+.next/
+.next-*/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── 密钥与本地配置（重要：绝不提交）──
+.env
+.env.*
+!.env.example
+config.yaml
+*.key
+*.pem
+
+# ── 生成产物（体积大，可重新生成）──
+yuechuang/yuechuang/backend/code/
+code/
+temp/
+logs/
+*.log
+
+# ── 编辑器 ──
+.vscode/
+.idea/
+*.swp
+
+# ── 压缩包 ──
+*.zip
+
+# Local workflow database (outside public /code)
+.runtime/
+
+# Local content, generated media and temporary test output
+*.sqlite*
+*.db
+*.db-*
+release-report.local.json

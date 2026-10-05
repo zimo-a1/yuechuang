@@ -1,0 +1,16 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "endpoint": "/v1/images/generations/async",
+  "request": {
+    "model": "gpt-image-2.5-sunburst-async",
+    "prompt": "竖屏电影感摄影，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。自然光，真实毛发，清晰主体，柔和景深，无文字、无字幕、无标志。",
+    "size": "9:16",
+    "resolution": "1k",
+    "quality": "medium"
+  },
+  "max_create_attempts": 1,
+  "poll_timeout_seconds": 900,
+  "documentation": "https://docs.ai-tudou.net/gpt-image-2(new)-docs.html",
+  "contract_note": "User-selected model has the async image endpoint in public pricing metadata; general image documentation still names gpt-image-2-all. Preserve requested model, no fallback. One task only.",
+  "pricing_note": "Public model_price=0 is not proof of free usage; tier price and actual charge unverified."
+}

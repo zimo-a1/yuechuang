@@ -1,0 +1,26 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "request": {
+    "model": "minimax-h3-2k",
+    "prompt": "竖屏电影镜头，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。镜头平稳，自然光，动作连贯，无文字、无字幕、无标志。",
+    "duration": 10,
+    "aspect_ratio": "9:16",
+    "resolution": "2k",
+    "extra": {
+      "aspect_ratio": "9:16",
+      "resolution": "2k",
+      "size": "2K",
+      "seconds": "10",
+      "workflow_id": "text-to-video"
+    },
+    "size": "2K",
+    "seconds": "10",
+    "workflow_id": "text-to-video"
+  },
+  "request_timeout_seconds": 120,
+  "poll_interval_seconds": 10,
+  "poll_timeout_seconds": 900,
+  "pricing_note": "2026-09-30 model description says 10 seconds costs CNY 2.20, 15 seconds CNY 2.50. Base card says CNY 0.22/request; inconsistent. Actual billing unverified.",
+  "contract_note": "Second, explicitly corrected probe after the first request was rejected with upstream_reject: size 必须是 JSON H3 支持的尺寸. size=2K, seconds=10 and workflow_id=text-to-video follow another provider public H3 schema (https://yycode.net/docs/zh-CN/video-api/), not a verified Tudou contract. Keep original attempt state; no automatic creation retries. The corrected request was rejected at JSON decoding with HTTP 400: seconds must be a string. Final type-corrected probe uses seconds=\"10\"; no blind size variants.",
+  "documentation": "https://api.ai-tudou.net/pricing"
+}

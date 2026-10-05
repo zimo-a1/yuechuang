@@ -1,0 +1,137 @@
+/* IP discovery, source reading, and bounded chapter selection. */
+.hb-content .yc-ip-library,.hb-content .ex-ip-detail {max-width:1600px;margin-inline:auto;padding:24px 28px 48px;background:var(--bg-base);}
+.hb-content .yc-ip-catalog-heading {margin-bottom:20px;gap:16px;flex-wrap:wrap;}
+.hb-content .yc-ip-catalog-heading h1,.ex-ip-detail .yc-ip-detail-hero h1 {font-size:20px;line-height:1.4;letter-spacing:-.3px;}
+.hb-content .yc-ip-type-navigation {order:3;flex-basis:100%;}
+.hb-content .yc-ip-add-button {margin-left:auto;background:var(--brand);border:0;border-radius:8px;color:white;min-height:38px;}
+.hb-content .yc-ip-add-button:hover {background:var(--brand-hover);}
+.hb-content .yc-ip-types button[aria-pressed=true],.hb-content .yc-ip-types button:active {background:var(--brand);color:white;}
+.hb-content .yc-ip-type-scroll:disabled {opacity:.25;background:var(--bg-elev);cursor:not-allowed;}
+.hb-content .yc-ip-library .yc-ip-toolbar {margin-bottom:8px;gap:12px;}
+.hb-content .yc-ip-library .yc-ip-toolbar form {height:40px;max-width:460px;border:1px solid var(--border-default);background:var(--bg-elev);padding-left:12px;border-radius:8px;}
+.hb-content .yc-ip-library .yc-ip-toolbar form:focus-within {border-color:var(--brand-blue-1);box-shadow:0 0 0 3px var(--brand-focus);}
+.hb-content .yc-ip-library .yc-ip-toolbar input {height:38px;font-size:14px;min-width:0;}
+.hb-content .yc-ip-library .yc-ip-search-submit {display:grid;place-items:center;width:40px;min-height:38px;padding:0;border-left:0;color:var(--text-secondary);}
+.hb-content .yc-ip-library .yc-ip-status-select select {height:40px;border:1px solid var(--border-default);background:var(--bg-elev);border-radius:8px;color:var(--text-secondary);}
+.hb-content .yc-ip-library .yc-ip-status-select[data-active=true] select {color:var(--brand-blue-1);border-color:var(--brand-blue-1);background:var(--bg-elev-2);}
+.hb-content .yc-ip-library .yc-ip-grid {grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;}
+.hb-content .yc-ip-library .ex-ip-card {display:flex;flex-direction:column;background:var(--bg-elev);border:1px solid var(--border-default);border-radius:12px;transition:transform 150ms,border-color 150ms,box-shadow 150ms;}
+.hb-content .yc-ip-library .ex-ip-card:hover,.hb-content .yc-ip-library .ex-ip-card:focus-within {transform:translateY(-3px);border-color:var(--brand-blue-1);box-shadow:0 10px 24px #0004;}
+.hb-content .ex-ip-card .yc-ip-card-art {display:block;aspect-ratio:3/2;min-width:0;}
+.hb-content .yc-ip-library .ex-ip-card .yc-ip-cover img {object-fit:cover;object-position:center 35%;transition:transform 150ms;}
+.hb-content .ex-ip-card:hover .yc-ip-cover img {transform:scale(1.025);}
+.hb-content .ex-ip-card-state {position:absolute;top:12px;right:12px;z-index:1;max-width:calc(100% - 24px);}
+.ex-ip-card-state .yc-status-tag {background:var(--bg-elev);box-shadow:0 2px 10px #0004;}
+.hb-content .yc-ip-library .ex-ip-card .yc-ip-card-content {padding:16px;}
+.ex-ip-card-meta {display:flex;gap:12px;justify-content:space-between;color:var(--text-secondary);font-size:12px;margin-bottom:8px;min-width:0;}
+.ex-ip-card-meta>span {overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.hb-content .ex-ip-card h2 {font-size:16px;line-height:24px;}
+.hb-content .yc-ip-library .ex-ip-card .yc-ip-card-content p {color:var(--text-secondary);font-size:13px;line-height:22px;height:44px;margin:8px 0 16px;}
+.ex-ip-card-actions {display:flex;align-items:center;gap:10px;margin-top:auto;}
+.ex-ip-card-actions>span {flex:1;min-width:0;}
+.ex-ip-card-actions .yc-primary-button {width:100%;gap:6px;min-height:38px;border-radius:8px;font-size:13px;}
+.ex-ip-detail-link {font-size:13px;white-space:nowrap;color:var(--text-secondary);padding:8px 0;}
+.ex-ip-detail-link:hover {color:var(--brand-blue-1);}
+.ex-ip-card-next {display:block;color:var(--text-tertiary);font-size:11px;line-height:1.5;margin-top:10px;}
+.hb-content .yc-ip-library .yc-ip-card-skeleton>div {aspect-ratio:3/2;}
+.hb-content .yc-ip-library .yc-ip-pagination button[aria-current=page] {background:var(--brand);color:white;}
+.ex-ip-detail .yc-breadcrumbs {margin-bottom:24px;}
+.ex-ip-detail .yc-ip-detail-hero {grid-template-columns:150px minmax(0,1fr);gap:24px;}
+.ex-ip-detail .yc-ip-detail-hero .yc-ip-cover {min-height:224px;border-radius:12px;}
+.ex-ip-detail .yc-ip-metrics {gap:0;flex-wrap:wrap;align-items:center;font-size:13px;margin:16px 0;}
+.ex-ip-detail .yc-ip-metrics>span,.ex-ip-project-count {padding:0 16px;border-right:1px solid var(--border-default);display:inline-flex;gap:5px;align-items:baseline;}
+.ex-ip-detail .yc-ip-metrics>span:first-child {padding-left:0;}
+.ex-ip-detail .yc-ip-metrics b {display:inline;font-size:16px;margin:0;font-weight:600;}
+.ex-ip-project-count {border:0;padding-right:0;color:var(--brand-blue-1);min-height:32px;}
+.ex-ip-detail .yc-ip-actions {align-items:center;gap:12px;}
+.ex-ip-detail .yc-ip-actions>.yc-primary-button,.ex-ip-detail .yc-ip-actions>span>.yc-primary-button {min-height:42px;padding:0 20px;}
+.ex-ip-blocked {font-size:12px;color:var(--text-secondary);line-height:1.8;margin-top:10px;}
+.ex-ip-blocked button {color:var(--brand-blue-1);margin-left:6px;}
+.ex-ip-manage {position:relative;}
+.ex-ip-manage-menu {position:absolute;z-index:15;top:calc(100% + 6px);right:0;min-width:170px;background:var(--bg-elev-2);border:1px solid var(--border-default);padding:6px;border-radius:10px;box-shadow:0 10px 30px #0007;}
+.ex-ip-manage-menu>button {display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px;border-radius:6px;font-size:13px;}
+.ex-ip-manage-menu>button:hover:not(:disabled),.ex-ip-manage-menu>button:focus-visible {background:var(--bg-elev);color:var(--brand-blue-1);}
+.ex-ip-manage-menu>button:disabled {opacity:.4;cursor:not-allowed;}
+.ex-ip-detail .yc-ip-reading-layout {grid-template-columns:300px minmax(0,1fr);background:var(--bg-elev);border-color:var(--border-default);}
+.ex-ip-reader-directory {min-width:0;padding:16px;border-right:1px solid var(--border-default);background:var(--bg-elev);}
+.ex-ip-reader-directory>h2 {font-size:14px;font-weight:600;margin:0 0 14px;}
+.ex-ip-detail .yc-ip-reader {padding:24px;}
+.ex-ip-detail .yc-ip-reader h3 {font-size:16px;}
+.ex-ip-detail .yc-ip-versionbar select,.ex-ip-project-dialog select {background:var(--bg-elev);border:1px solid var(--border-default);border-radius:8px;color:var(--text-primary);padding:9px 12px;min-width:0;width:100%;font-size:13px;}
+.ex-ip-project-dialog {width:min(760px,calc(100vw - 32px));}
+.ex-ip-project-dialog .hb-dialog-body {padding:20px 24px;gap:18px;}
+.ex-ip-project-dialog .hb-dialog-body>label {font-size:13px;}
+.ex-ip-project-dialog .hb-dialog-body input,.ex-ip-project-dialog .hb-dialog-body textarea {background:var(--bg-elev);border-color:var(--border-default);border-radius:8px;}
+.ex-ip-project-dialog footer {position:sticky;bottom:0;background:var(--bg-elev);}
+.ex-ip-project-dialog footer>small {max-width:260px;line-height:1.5;}
+.ex-ip-project-dialog footer>span {display:inline-flex;}
+.ex-ip-project-dialog .hb-project-button.is-primary {background:var(--brand);color:white;}
+.ex-ip-project-dialog .hb-project-button.is-primary:hover:not(:disabled) {background:var(--brand-hover);}
+.ex-ip-project-dialog .hb-project-button.is-primary:disabled {background:var(--brand-disabled);color:#ffffff99;}
+.ex-ip-range {padding:16px;border:1px solid var(--border-default);border-radius:12px;background:var(--bg-elev);min-width:0;}
+.ex-ip-range-heading {display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.ex-ip-range-heading h3 {font-size:14px;font-weight:600;}
+.ex-ip-range-heading>span {font-size:12px;color:var(--text-secondary);}
+.ex-ip-range-presets,.ex-ip-examples {display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+.ex-ip-range-presets button,.ex-ip-examples button {min-height:32px;padding:5px 10px;border:1px solid var(--border-default);border-radius:6px;font-size:12px;color:var(--text-secondary);background:var(--bg-elev-2);}
+.ex-ip-range-presets button[aria-pressed=true],.ex-ip-examples button[aria-pressed=true] {background:var(--brand);border-color:transparent;color:white;}
+.ex-ip-range-presets button:hover:not(:disabled),.ex-ip-examples button:hover:not(:disabled) {border-color:var(--brand-blue-1);}
+.ex-ip-range-summary {display:flex;align-items:center;gap:12px;width:100%;padding:12px;text-align:left;border:1px solid var(--border-default);border-radius:8px;background:var(--bg-elev-2);}
+.ex-ip-range-summary>svg {color:var(--brand-blue-1);flex-shrink:0;}
+.ex-ip-range-summary>span:nth-child(2) {display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;}
+.ex-ip-range-summary strong {font-size:13px;font-weight:600;}
+.ex-ip-range-summary small {font-size:11px;color:var(--text-secondary);}
+.ex-ip-range-edit {display:flex;align-items:center;gap:4px;font-size:12px;color:var(--brand-blue-1);flex-shrink:0;}
+.ex-ip-range-names {display:flex;flex-direction:column;gap:4px;margin:10px 0 0;color:var(--text-secondary);font-size:12px;min-width:0;}
+.ex-ip-range-names>span {text-overflow:ellipsis;overflow:hidden;white-space:nowrap;}
+.ex-ip-range-instruction {color:var(--brand-blue-1);font-size:12px;line-height:1.7;margin:12px 0;}
+.ex-ip-direction>label {font-size:13px;}
+.ex-ip-direction>small {font-size:12px;color:var(--text-secondary);line-height:1.7;}
+.ex-ip-project-dialog .ex-ip-direction textarea {display:block;margin-top:6px;}
+.ex-ip-chapter-list {min-width:0;}
+.ex-ip-chapter-search {display:flex;align-items:center;gap:8px;border:1px solid var(--border-default);background:var(--bg-elev-2);border-radius:8px;padding:0 10px;color:var(--text-secondary);}
+.ex-ip-chapter-search>svg {flex-shrink:0;}
+.ex-ip-chapter-search:focus-within {border-color:var(--brand-blue-1);box-shadow:0 0 0 2px var(--brand-focus);}
+.ex-ip-chapter-search input,.ex-ip-project-dialog .ex-ip-chapter-search input {flex:1;min-width:0;width:0;min-height:38px;border:0;background:transparent;padding:6px 0;border-radius:0;font-size:13px;outline:none;box-shadow:none;}
+.ex-ip-chapter-search button {display:grid;place-items:center;width:28px;height:32px;flex-shrink:0;}
+.ex-ip-chapter-help {font-size:11px;line-height:1.6;color:var(--text-secondary);margin:8px 0;}
+.ex-ip-virtual-list {position:relative;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle);}
+.ex-ip-virtual-inner {position:relative;}
+.ex-ip-chapter-row {position:absolute;left:0;right:0;width:100%;display:flex;align-items:center;gap:10px;padding:8px 10px;text-align:left;border:1px solid transparent;border-radius:6px;color:var(--text-secondary);}
+.ex-ip-chapter-row:hover:not(:disabled),.ex-ip-chapter-row[data-active=true] {background:var(--bg-elev-2);border-color:var(--border-default);}
+.ex-ip-chapter-row[aria-selected=true] {background:rgba(61,139,255,.10);color:var(--brand-blue-1);}
+.ex-ip-chapter-row[data-endpoint=true] {border-color:var(--brand-blue-1);background:rgba(61,139,255,.18);}
+.ex-ip-chapter-ordinal {flex-shrink:0;min-width:28px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums;}
+.ex-ip-chapter-name {display:flex;flex-direction:column;gap:4px;min-width:0;flex:1;}
+.ex-ip-chapter-name strong {display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:13px;font-weight:500;}
+.ex-ip-chapter-name small {font-size:11px;color:var(--text-secondary);}
+.ex-ip-chapter-row>svg {flex-shrink:0;}
+.ex-ip-chapter-count,.ex-ip-chapter-empty {color:var(--text-secondary);font-size:11px;margin:10px 0 0;line-height:1.7;}
+.ex-ip-chapter-empty {padding:24px 10px;text-align:center;}
+.ex-ip-import-dialog {width:min(640px,calc(100vw - 32px));overflow:hidden;}
+.ex-ip-import-dialog>form {display:flex;flex-direction:column;max-height:calc(100dvh - 48px);padding:0;overflow:hidden;}
+.ex-ip-import-dialog>form>header {padding:20px 24px;margin:0;border-bottom:1px solid var(--border-default);flex-shrink:0;}
+.ex-ip-import-dialog>form>fieldset {overflow-y:auto;min-height:0;padding:20px 24px;overscroll-behavior:contain;}
+.ex-ip-import-dialog>form>footer {padding:16px 24px;border-top:1px solid var(--border-default);flex-shrink:0;margin:0;background:var(--bg-elev);}
+.ex-ip-import-dialog>form>.yc-project-error,.ex-ip-import-dialog>form>p[role=status] {margin:0;padding:10px 24px;font-size:12px;flex-shrink:0;}
+.ex-ip-form-heading {display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;margin:0 0 16px;}
+.ex-ip-form-heading>span {display:grid;place-items:center;width:24px;height:24px;border-radius:6px;background:var(--brand);color:white;font-size:11px;}
+.ex-ip-import-dialog .yc-ip-upload {border-color:var(--border-default);background:var(--bg-elev-2);}
+.ex-ip-import-dialog input:focus,.ex-ip-import-dialog textarea:focus,.ex-ip-import-dialog select:focus {outline:2px solid var(--brand-focus);outline-offset:2px;}
+@media(max-width:1199px) {.hb-content .yc-ip-library .yc-ip-grid {grid-template-columns:repeat(3,minmax(0,1fr));}.ex-ip-detail .yc-ip-reading-layout {grid-template-columns:260px minmax(0,1fr);}}
+@media(max-width:900px) {.hb-content .yc-ip-library .yc-ip-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.ex-ip-detail .yc-ip-reading-layout {display:flex;flex-direction:column;}.ex-ip-reader-directory {border-right:0;border-bottom:1px solid var(--border-default);}.ex-ip-detail .yc-ip-detail-hero {grid-template-columns:120px minmax(0,1fr);}.ex-ip-detail .yc-ip-detail-hero .yc-ip-cover {min-height:180px;}}
+@media(max-width:600px) {
+  .hb-content .yc-ip-library,.hb-content .ex-ip-detail {padding:20px 16px 32px;}
+  .hb-content .yc-ip-library .yc-ip-grid {grid-template-columns:1fr;gap:16px;}
+  .hb-content .yc-ip-library .yc-ip-toolbar {align-items:stretch;}.hb-content .yc-ip-library .yc-ip-toolbar form {max-width:none;}
+  .hb-content .yc-ip-catalog-heading h1 {font-size:20px;}.hb-content .yc-ip-add-button {padding:0 12px;}
+  .ex-ip-detail .yc-ip-detail-hero {grid-template-columns:88px minmax(0,1fr);gap:16px;}.ex-ip-detail .yc-ip-detail-hero .yc-ip-cover {min-height:132px;}
+  .ex-ip-detail .yc-ip-detail-hero h1 {font-size:20px;}.ex-ip-detail .yc-ip-synopsis {max-height:100px;}
+  .ex-ip-detail .yc-ip-metrics {gap:4px 8px;}.ex-ip-detail .yc-ip-metrics>span,.ex-ip-project-count {padding:0;border:0;font-size:11px;}.ex-ip-detail .yc-ip-metrics b {font-size:13px;}
+  .ex-ip-detail .yc-ip-actions {gap:8px;}.ex-ip-detail .yc-ip-actions>span>.yc-primary-button {padding:0 12px;min-height:38px;font-size:12px;}
+  .ex-ip-detail .yc-ip-reader {padding:16px;}.ex-ip-detail .yc-ip-reader header {flex-wrap:wrap;}.ex-ip-detail .yc-ip-versionbar label {width:100%;}
+  .ex-ip-project-dialog .hb-dialog-body {padding:16px;}.ex-ip-project-dialog footer {display:flex;flex-wrap:wrap;padding:12px 16px;}.ex-ip-project-dialog footer>small {flex-basis:100%;max-width:none;margin-right:0;}.ex-ip-project-dialog footer>span {flex:1;}.ex-ip-project-dialog footer>span>button {width:100%;}
+  .ex-ip-range {padding:12px;}.ex-ip-range-summary {gap:8px;padding:10px;}.ex-ip-range-edit {font-size:0;}.ex-ip-range-edit svg {width:18px;}
+  .ex-ip-import-dialog>form>header,.ex-ip-import-dialog>form>fieldset {padding:16px;}.ex-ip-import-dialog>form>footer {padding:12px 16px;}.ex-ip-import-dialog>form {max-height:calc(100dvh - 32px);}
+}
+@media(prefers-reduced-motion:reduce) {.hb-content .yc-ip-library .ex-ip-card,.hb-content .yc-ip-library .ex-ip-card .yc-ip-cover img {transition:none;transform:none;}}

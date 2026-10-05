@@ -1,0 +1,17 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "request": {
+    "model": "veo3.1",
+    "prompt": "竖屏电影镜头，一只橘猫在阳光照耀的草地上缓缓走过，停下来抬头看一只蝴蝶。镜头平稳缓慢推进，自然光，动作连贯，保留轻微风声与鸟鸣，无文字、无字幕、无标志。",
+    "duration": 4,
+    "aspect_ratio": "9:16",
+    "resolution": "720p",
+    "generate_audio": true
+  },
+  "request_timeout_seconds": 60,
+  "poll_interval_seconds": 10,
+  "poll_timeout_seconds": 900,
+  "pricing_note": "2026-09-30 public standard/default price: CNY 0.06/second; estimated CNY 0.24. Actual billing unverified.",
+  "contract_note": "Pricing lists veo3.1; docs list veo3.1-720p/1080p. Test the exact user-selected name once; do not automatically fall back.",
+  "documentation": "https://docs.ai-tudou.net/veo31-video-api-docs.html"
+}

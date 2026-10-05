@@ -1,0 +1,20 @@
+{
+  "base_url": "https://api.ai-tudou.net",
+  "request": {
+    "model": "grok-imagine-video-1.5",
+    "prompt": "竖屏电影镜头，一只橘猫坐在阳光照耀的草地上，轻轻抬头看一只飞过的蝴蝶。镜头平稳，自然光，动作连贯，无文字、无字幕、无标志。",
+    "duration": 6,
+    "aspect_ratio": "9:16",
+    "resolution": "720p",
+    "extra": {
+      "aspect_ratio": "9:16",
+      "resolution": "720p"
+    }
+  },
+  "request_timeout_seconds": 120,
+  "poll_interval_seconds": 10,
+  "poll_timeout_seconds": 900,
+  "pricing_note": "2026-09-30 public API reports quota_type=1, model_price=0.1. Currency, duration multiplier and actual charge are unverified.",
+  "contract_note": "Tudou model-specific documentation allows 6/10/15 seconds, 720p, aspect ratios 16:9/9:16/1:1, POST /v1/videos/generations, GET /v1/tasks/{task_id}. One create only; no automatic fallback.",
+  "documentation": "https://docs.ai-tudou.net/grok-video-api%EF%BC%88net%EF%BC%89-docs.html"
+}
