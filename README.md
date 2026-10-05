@@ -70,7 +70,3 @@ python -m pytest -q
 应用源码位于 `yuechuang/yuechuang/frontend` 与 `yuechuang/yuechuang/backend`。后端 `.runtime/` 保存业务状态，`code/` 保存生成素材，均不纳入版本控制。备份运行中的数据库请使用 SQLite backup API，并同时备份本地生成素材与私有配置。
 
 可配置的生成额度限制默认关闭；可通过环境变量开启。目录来源接口仅提供示例域名校验，接入自己的作品目录时需按实际可信来源调整；TXT / DOCX 本地导入不受影响。
-
-## 许可
-
-MIT，详见 [LICENSE](LICENSE)。依赖库与上游代码的必要版权声明予以保留。
