@@ -10,6 +10,7 @@ import { uploadArtifactImage } from '@/lib/workflowApi';
 import StageActions from './StageActions';
 import StageProgress from './StageProgress';
 import ImageLightbox from './ImageLightbox';
+import ImageReviewNote, {StageWarningList} from '@/components/ImageReviewNote';
 
 /* ─── 类型 ─── */
 interface AssetVersion {
@@ -19,6 +20,7 @@ interface AssetVersion {
   selected: string;       // 当前选中的文件路径
   versions: string[];     // 所有历史版本路径
   status?: 'pending' | 'done' | 'failed' | 'running';  // 生成状态
+  review?: {status?: string; score?: number | null; reason?: string; image?: string};
 }
 
 /* ─── 水平滚动图片画廊 ─── */
@@ -324,6 +326,7 @@ function AssetRow({
                 重试
               </button>
             )}
+            <ImageReviewNote review={asset.review} selected={asset.selected} />
           </div>
         )}
       </div>
@@ -489,6 +492,7 @@ export default function CharacterStage({ previousConfirmed, state, sessionId, on
         {state.error && (
           <div className="text-sm text-red-600 bg-red-50 border border-red-200 p-4 rounded-xl mb-4">{state.error}</div>
         )}
+        <StageWarningList warnings={state.artifact?.validation_warnings} />
 
         {/* ═══ 角色列表 ═══ */}
         {hasChars && (

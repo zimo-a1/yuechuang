@@ -7,6 +7,7 @@ import { assetUrl } from './utils';
 import StageActions from './StageActions';
 import StageProgress from './StageProgress';
 import VideoPreview from './VideoPreview';
+import {continuationSkip} from '@/lib/imageReview';
 
 /* ─── 类型 ─── */
 interface ClipItem {
@@ -21,6 +22,9 @@ interface ClipItem {
   selected: string;       // 当前选中的视频路径
   versions: string[];     // 所有历史版本路径
   status?: 'pending' | 'done' | 'failed' | 'running';
+  generation_error?: {code?: string; message?: string; skipped?: boolean; previous_segment_id?: string};
+  error?: {code?: string; message?: string; skipped?: boolean; previous_segment_id?: string};
+  skipped?: boolean;
 }
 
 /* ─── 水平滚动视频画廊 ─── */
@@ -158,6 +162,7 @@ function ClipRow({
   const hasChanges = editDesc !== clip.description;
   const hasVideo = Boolean(clip.selected) || clip.versions.length > 0;
   const canGenerateMissing = Boolean(allowMissingGenerate) && !hasVideo && !isRunning && !isRegenerating;
+  const skip = continuationSkip(clip);
 
   return (
     <div className={`flex flex-col xl:flex-row border rounded-xl overflow-hidden bg-white ${disabled ? 'opacity-50' : ''} ${
@@ -272,7 +277,7 @@ function ClipRow({
           <div className="flex items-center justify-center h-32 aspect-video bg-red-50/50 rounded-lg border border-dashed border-red-200">
             <div className="flex flex-col items-center gap-1 text-red-400 text-xs px-4">
               <AlertCircle className="w-4 h-4" />
-              <span>生成失败</span>
+              <span>{skip ? skip.message : '生成失败'}</span>
               {!isStageRunning && (
                 <button
                   onClick={onRegenerate}

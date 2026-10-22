@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {PROJECT_STAGES, projectProgress, projectHref} from '../lib/projects.ts';
+import {PROJECT_STAGES, confirmationFollowUp, nextAssetId, projectProgress, projectHref} from '../lib/projects.ts';
 
 test('init completion does not make a new draft completed', () => {
   const progress = projectProgress({status: {init:'completed'}, current_stage:'init'});
@@ -20,7 +20,15 @@ test('running and failed work takes precedence over existing review artifacts', 
   assert.equal(projectProgress({status:{script_generation:'waiting',character_design:'running'}}).stage, 'character_design');
   assert.equal(projectProgress({status:{script_generation:'completed',video_generation:'error'}}).state, 'attention');
 });
-test('old session URL survives and unknown stages cannot produce a blank workspace', () => {
-  assert.equal(projectHref('old-session', 'init'), '/?session=old-session');
-  assert.equal(projectHref('a/b', 'storyboard'), '/?session=a%2Fb&stage=storyboard');
+test('confirm does not trigger execute and old session links open the studio', () => {
+  const follow = confirmationFollowUp('storyboard', 'ip-project');
+  assert.equal(follow.execute, false);
+  assert.equal(follow.href, '/studio/ip-project?step=videos&stage=storyboard');
+  assert.equal(confirmationFollowUp(undefined, 'ip-project').href, null);
+  assert.equal(projectHref('old-session', 'init'), '/studio/old-session');
+  assert.equal(projectHref('a/b', 'storyboard'), '/studio/a%2Fb?step=videos&stage=storyboard');
+});
+test('new structure ids keep the upload prefixes', () => {
+  assert.equal(nextAssetId('char_', []), 'char_001');
+  assert.equal(nextAssetId('set_', ['set_001', 'set_002']), 'set_003');
 });

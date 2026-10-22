@@ -12,6 +12,7 @@ import StageProgress from './StageProgress';
 /* ─── 类型 ─── */
 
 import type { ScriptData, ScriptCharacter, ScriptSetting, ScriptScene, LoglineData, ActCompleteData } from '@/lib/workflowTypes';
+import {nextAssetId} from '@/lib/projects';
 
 /* ─── 角色色彩 ─── */
 const ROLE_COLORS: Record<string, string> = {
@@ -135,6 +136,9 @@ export default function ScriptStage({ state, sessionId, onConfirm, onIntervene, 
       characters: prev.characters?.map((c, i) => i === idx ? { ...c, ...patch } : c),
     }));
   };
+
+  const addCharacter = () => setEditData(prev => ({...prev, characters: [...(prev.characters || []), {name: '', description: '', role: '配角', personality: [], character_id: nextAssetId('char_', (prev.characters || []).map(item => item.character_id || ''))}]}));
+  const addSetting = () => setEditData(prev => ({...prev, settings: [...(prev.settings || []), {name: '', description: '', setting_id: nextAssetId('set_', (prev.settings || []).map(item => item.setting_id || ''))}]}));
 
   const updateSetting = (idx: number, patch: Partial<ScriptSetting>) => {
     setEditData(prev => ({
@@ -613,16 +617,16 @@ export default function ScriptStage({ state, sessionId, onConfirm, onIntervene, 
             </section>
 
             {/* 角色编辑 */}
-            {editData.characters && editData.characters.length > 0 && (
-              <section>
-                <div className="flex items-center gap-2 mb-3"><Users className="w-4 h-4 text-blue-500" /><h4 className="text-sm font-semibold text-gray-700">角色</h4></div>
+            <section>
+                <div className="flex items-center gap-2 mb-3"><Users className="w-4 h-4 text-blue-500" /><h4 className="text-sm font-semibold text-gray-700">角色</h4><button type="button" className="ml-auto text-xs text-blue-600" onClick={addCharacter}>新增角色</button></div>
                 <div className="space-y-3">
-                  {editData.characters.map((c, i) => (
+                  {(editData.characters || []).map((c, i) => (
                     <div key={i} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
                       <div className="flex gap-3">
                         <label className="flex flex-col gap-1 text-xs flex-1"><span className="text-gray-500 font-medium">名字</span>
                           <input type="text" value={c.name} onChange={e => updateCharacter(i, { name: e.target.value })}
-                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-blue-500/30 outline-none" /></label>
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-blue-500/30 outline-none" />
+                          {c.character_id && <small className="text-gray-400">{c.character_id}</small>}</label>
                         <label className="flex flex-col gap-1 text-xs w-24"><span className="text-gray-500 font-medium">角色</span>
                           <select value={c.role} onChange={e => updateCharacter(i, { role: e.target.value })}
                             className="border border-gray-200 rounded-lg px-2 py-2 text-sm text-gray-700 outline-none">
@@ -639,23 +643,19 @@ export default function ScriptStage({ state, sessionId, onConfirm, onIntervene, 
                   ))}
                 </div>
               </section>
-            )}
 
-            {/* 场景编辑 */}
-            {editData.settings && editData.settings.length > 0 && (
-              <section>
-                <div className="flex items-center gap-2 mb-3"><MapPin className="w-4 h-4 text-green-500" /><h4 className="text-sm font-semibold text-gray-700">场景</h4></div>
+            <section>
+                <div className="flex items-center gap-2 mb-3"><MapPin className="w-4 h-4 text-green-500" /><h4 className="text-sm font-semibold text-gray-700">场景</h4><button type="button" className="ml-auto text-xs text-blue-600" onClick={addSetting}>新增场景</button></div>
                 <div className="space-y-3">
-                  {editData.settings.map((s, i) => (
+                  {(editData.settings || []).map((s, i) => (
                     <div key={i} className="bg-white border border-gray-200 rounded-xl p-4">
-                      <label className="block text-xs text-gray-500 font-medium mb-1.5">{s.name}</label>
+                      <label className="block text-xs text-gray-500 font-medium mb-1.5">名称<input className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" value={s.name} onChange={e => updateSetting(i, {name: e.target.value})} />{s.setting_id && <small className="text-gray-400">{s.setting_id}</small>}</label>
                       <textarea value={s.description} onChange={e => updateSetting(i, { description: e.target.value })} rows={2}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-blue-500/30 outline-none resize-none" />
                     </div>
                   ))}
                 </div>
               </section>
-            )}
 
             {editData.episodes?.length ? <section className="space-y-4"><h4 className="text-sm font-semibold">分集正文</h4>
               {editData.episodes.map((episode, index) => <label key={episode.episode_number || index} className="flex flex-col gap-2 text-sm">

@@ -43,14 +43,14 @@ export function ProjectSelect({label,value,options,onChange,searchable=false,dis
 }
 export default function ProjectCreateDialog({onClose}:{onClose:()=>void}) {
   const router=useRouter(),dialog=useRef<HTMLDialogElement>(null),nameInput=useRef<HTMLInputElement>(null),lock=useRef(false),attempt=useRef<{payload:string;key:string}|null>(null);
-  const [defaultsLoading,setDefaultsLoading]=useState(true),[title,setTitle]=useState(''),[style,setStyle]=useState('realistic'),[ratio,setRatio]=useState('9:16'),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const [defaultsLoading,setDefaultsLoading]=useState(true),[title,setTitle]=useState(''),[style,setStyle]=useState('realistic'),[ratio,setRatio]=useState('9:16'),[duration,setDuration]=useState(60),[busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(()=>{dialog.current?.showModal();},[]);
-  useEffect(()=>{let active=true;settingsRequest<{style:string;video_ratio:string}>('/project-defaults').then(values=>{if(active){setStyle(values.style);setRatio(values.video_ratio);}}).catch(e=>{if(active)setError(errorMessage(e,'默认设置读取失败'));}).finally(()=>{if(active)setDefaultsLoading(false);});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;settingsRequest<{style:string;video_ratio:string;target_duration?:number}>('/project-defaults').then(values=>{if(active){setStyle(values.style);setRatio(values.video_ratio);if(values.target_duration)setDuration(values.target_duration);}}).catch(e=>{if(active)setError(errorMessage(e,'默认设置读取失败'));}).finally(()=>{if(active)setDefaultsLoading(false);});return()=>{active=false;};},[]);
   useEffect(()=>{if(!defaultsLoading)nameInput.current?.focus();},[defaultsLoading]);
   async function submit(){
-    if(lock.current||defaultsLoading||!title.trim())return;
+    if(lock.current||defaultsLoading||!title.trim()||!Number.isInteger(duration)||duration<15||duration>600){if(!Number.isInteger(duration)||duration<15||duration>600)setError('每集目标时长须为 15–600 的整数秒');return;}
     lock.current=true;setBusy(true);setError('');
-    const values={title:title.trim(),style,video_ratio:ratio,project_container:true},payload=JSON.stringify(values);
+    const values={title:title.trim(),style,video_ratio:ratio,target_duration:duration,project_container:true},payload=JSON.stringify(values);
     if(attempt.current?.payload!==payload)attempt.current={payload,key:crypto.randomUUID()};
     try{const result=await createProjectDraft(values,attempt.current.key);toast.success('项目已创建，尚未调用模型');router.push(`/projects/${result.session_id}`);onClose();}
     catch(e){const message=errorMessage(e,'创建失败');setError(message);toast.error(message);}
@@ -61,6 +61,7 @@ export default function ProjectCreateDialog({onClose}:{onClose:()=>void}) {
       <fieldset className="hb-dialog-body" disabled={busy||defaultsLoading}><label><span>项目名称 <span className="hb-required">*</span></span><input ref={nameInput} required maxLength={120} value={title} onChange={e=>setTitle(e.target.value)} placeholder="例如：都市情感短剧《时光邮局》"/></label>
         <div className="hb-dialog-field"><span>视觉风格</span><ProjectSelect label="视觉风格" value={style} options={STYLES} onChange={setStyle} searchable disabled={busy||defaultsLoading}/></div>
         <div className="hb-dialog-field"><span>画面比例</span><ProjectSelect label="画面比例" value={ratio} options={VIDEO_RATIOS} onChange={setRatio} disabled={busy||defaultsLoading}/><small>各集沿用项目画幅，创建项目不会调用模型。</small></div>
+        <label>每集目标时长（秒）<input aria-label="每集目标时长" type="number" min={15} max={600} required value={duration} onChange={e=>setDuration(Number(e.target.value))}/></label>
       </fieldset>{error&&<p role="alert" className="hb-project-error">{error}</p>}
       <footer><small>仅创建项目 · 不产生模型费用</small><button type="button" className="hb-project-button" onClick={onClose} disabled={busy}>取消</button><button className="hb-project-button is-primary" disabled={busy||defaultsLoading||!title.trim()} title={!title.trim()?'请先填写项目名称':undefined}>{busy?<Loader2 size={14} className="animate-spin"/>:<Plus size={14}/>} {defaultsLoading?'读取默认设置…':busy?'创建中…':'创建项目'}</button></footer>
     </form>

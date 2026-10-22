@@ -18,7 +18,7 @@ TEXT='前言说明\n第一章 港口\n林舟看向远处的信号灯。\n第二�
 async def test_catalog_order_pagination_rights_and_repeat_preserve_edits(api):
     client, engine, library = api
     records = [{'title': f'测试目录 {n}', 'author': '测试作者', 'genre': '测试', 'synopsis': '测试资料',
-                'catalog': {'source': '示例作品目录', 'source_url': 'https://catalog.example.com/yuechuang/ip-library/home',
+                'catalog': {'source': '咪咕悦创', 'source_url': 'https://www.cmread.com/yuechuang/ip-library/home',
                             'source_id': f'test-{n}', 'position': n, 'fetched_at': '2026-10-01T00:00:00Z', 'cover_path': ''}}
                for n in range(1, 51)]
     assert library.import_catalog(records) == {'created': 50, 'skipped': 0}
@@ -48,12 +48,12 @@ async def test_catalog_order_pagination_rights_and_repeat_preserve_edits(api):
 def test_catalog_snapshot_validation(tmp_path):
     from scripts.import_ip_catalog import read_records
     from pydantic import ValidationError
-    catalog = {'source': '测试', 'source_url': 'https://catalog.example.com/yuechuang/ip-library/home',
+    catalog = {'source': '测试', 'source_url': 'https://www.cmread.com/yuechuang/ip-library/home',
                'source_id': '1', 'position': 1, 'fetched_at': '2026-10-01', 'cover_path': ''}
     file = tmp_path / 'catalog.json'
     file.write_text(json.dumps([{'title': '测试', 'catalog': catalog}]))
     assert len(read_records(file)) == 1
-    for changes in ({'source_url': 'javascript:alert(1)'}, {'source_url': 'https://catalog.example.com.evil.test/'},
+    for changes in ({'source_url': 'javascript:alert(1)'}, {'source_url': 'https://www.cmread.com.evil.test/'},
                     {'cover_path': '/ip-covers/../../private.png'}, {'cover_path': 'https://external.test/cover.jpg'}):
         file.write_text(json.dumps([{'title': '测试', 'catalog': {**catalog, **changes}}]))
         with pytest.raises(ValidationError):
@@ -67,7 +67,7 @@ async def test_genre_filter_covers_all_pages_and_combines_with_search_status(api
     client, _, library = api
     records = [{'title': f'航线 {n}', 'author': '特定作者' if n == 40 else '合成作者',
                 'genre': '都市' if n <= 30 else '科幻', 'synopsis': '科幻题材研究者的故事',
-                'catalog': {'source': '测试目录', 'source_url': 'https://catalog.example.com/yuechuang/ip-library/home',
+                'catalog': {'source': '测试目录', 'source_url': 'https://www.cmread.com/yuechuang/ip-library/home',
                             'source_id': f'genre-{n}', 'position': n, 'fetched_at': '2026-10-01', 'cover_path': ''}}
                for n in range(1, 51)]
     library.import_catalog(records)

@@ -8,6 +8,7 @@
 import re
 from functools import lru_cache
 from core.shot_control import ShotPlanError, speech_seconds, validate_shot_control
+from core import scene_merge
 import json
 import asyncio
 import logging
@@ -17,7 +18,7 @@ from typing import Any, Optional, Callable, Dict, List, Tuple
 from .base_agent import AgentInterface
 from core.output_validation import (
     ModelOutputError, decode_json, validate_as, validate_design, validate_episodes,
-    validate_plan, validate_review, validate_storyboard,
+    validate_multi_design, validate_plan, validate_review, validate_storyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ class StoryboardAgent(AgentInterface):
         line = re.sub(r"^<action>\s*", "", line, flags=re.I)
         line = re.sub(r"\s*</action>$", "", line, flags=re.I)
         line = re.sub(r"\s+", " ", line)
-        return line.strip()
+        return scene_merge.strip_markers(line)
 
     @staticmethod
     def _strip_markup(text: str) -> str:
@@ -135,6 +136,15 @@ class StoryboardAgent(AgentInterface):
             return {"location": location, "scene_time": parts[1].strip() if len(parts) > 1 else "",
                     "scene_space": "", "scene_context": clean}
 
+        # Novel adaptation export (core/novel_adaptation.py::_artifact):
+        # 场 1 · 仓库 · 15秒【创作补充】
+        novel = re.match(r"^场\s*(\d+)\s*[·・|｜]\s*(.+?)\s*[·・|｜]\s*(\d+)\s*秒\s*(?:【[^】]*】\s*)*$", clean)
+        if novel:
+            candidate = novel.group(2).strip()
+            location = next((name for name in setting_names if cls._setting_matches_text(name, candidate)), candidate)
+            return {"location": location[:40], "scene_time": "", "scene_space": "",
+                    "scene_context": scene_merge.strip_markers(clean), "header_format": "novel"}
+
         # Examples:
         # **第1集-第1场 日 内 高二三班教室**
         # **1-1 夜 内 锐创科技办公室**
@@ -202,9 +212,8 @@ class StoryboardAgent(AgentInterface):
             return 2
         dialogue = cls._dialogue_parts(text)
         dialogue_text = dialogue[2] if dialogue else text
-        visible_text = re.sub(r"\s+", "", dialogue_text)
-        duration = (len(visible_text) + 4) // 5
-        return max(2, min(15, duration))
+        # One speech-rate rule for annotation and stage-23 planning (4.5 chars/s).
+        return min(cls.MAX_SEGMENT_DURATION, scene_merge.dialogue_seconds(dialogue_text))
 
     @classmethod
     def _is_entry_action(cls, text: str, character_names: List[str]) -> bool:
@@ -236,6 +245,7 @@ class StoryboardAgent(AgentInterface):
         current_scene_context = ""
         scene_characters: List[str] = []
         scene_key = 0
+        novel_scene = False
 
         for line_number, raw_line in enumerate(raw_lines, 1):
             stripped = raw_line.strip()
@@ -253,8 +263,9 @@ class StoryboardAgent(AgentInterface):
                 current_scene_time = header_parts.get("scene_time", "")
                 current_scene_space = header_parts.get("scene_space", "")
                 current_scene_context = header_parts.get("scene_context", cls._strip_markup(stripped))
+                novel_scene = header_parts.get("header_format") == "novel"
                 scene_characters = cls._match_characters(line, character_names)
-                annotated_lines.append(cls._strip_markup(stripped))
+                annotated_lines.append(scene_merge.strip_markers(cls._strip_markup(stripped)))
                 continue
 
             if re.match(r"^人物[:：]", line):
@@ -264,6 +275,8 @@ class StoryboardAgent(AgentInterface):
 
             dialogue = cls._dialogue_parts(line)
             is_action = bool(re.match(r"^<action>", stripped, flags=re.I)) or bool(re.search(r"</action>$", stripped, flags=re.I))
+            # Novel scenes carry their action paragraph without an <action> tag.
+            is_action = is_action or (novel_scene and not dialogue)
             if not dialogue and not is_action:
                 annotated_lines.append(line)
                 continue
@@ -289,6 +302,7 @@ class StoryboardAgent(AgentInterface):
                 "is_dialogue": is_dialogue,
                 "speaker": speaker,
                 "tone": tone,
+                "dialogue": dialogue[2] if dialogue else "",
                 "characters": unit_chars,
                 "scene_characters": scene_characters[:],
                 "scene_key": scene_key,
@@ -801,6 +815,191 @@ class StoryboardAgent(AgentInterface):
             validate_storyboard([{"episode_number": ep_n, "segments": [fallback]}])
             return fallback
 
+    # ─── 第 24 阶段：同场景多镜头合并（程序切段，模型只写镜头画面） ───
+
+    @classmethod
+    def _merged_segment_plans(cls, ep_n: int, units: List[dict]) -> List[dict]:
+        plans = []
+        for number, raw in enumerate(scene_merge.plan_episode(units), 1):
+            plan = cls._segment_plan_from_units(ep_n, number, raw["items"])
+            plan.update({key: raw[key] for key in ("shot_groups", "shot_durations", "total_duration",
+                                                   "continues_previous", "too_long", "speech_seconds")})
+            scene_key = raw["items"][0].get("scene_key")
+            plan["scene_key"] = f"{ep_n}-{scene_key}" if scene_key else ""
+            plans.append(plan)
+        return plans
+
+    @staticmethod
+    def _multi_shot_payload(plan: dict) -> List[dict]:
+        payload = []
+        for index, (group, duration) in enumerate(zip(plan["shot_groups"], plan["shot_durations"]), 1):
+            payload.append({
+                "shot_id": f"S{index}",
+                "duration": duration,
+                "items": [{
+                    "unit_id": item["unit_id"],
+                    "kind": "dialogue" if item.get("is_dialogue") else "action",
+                    "speaker": item.get("speaker", ""),
+                    "text": scene_merge.strip_markers(item.get("dialogue") or item["text"]) if item.get("is_dialogue") else item["text"],
+                } for item in group],
+            })
+        return payload
+
+    @classmethod
+    def _build_multi_design_prompt(cls, ep_n: int, ep_t: str, plan: dict, style: str, retry_error: str = "") -> str:
+        template = _get_storyboard_prompt("segment_design_multi", "zh")
+        retry_feedback = f"上一次输出未通过校验，错误原因：{retry_error}\n请根据这个错误修正输出。" if retry_error else ""
+        continuation = ("本片段承接同一场景的上一片段，第一个镜头从上一片段结尾的站位继续，不要重新入场。"
+                        if plan.get("continues_previous") else "")
+        from prompts.loader import format_prompt
+        return format_prompt(
+            template,
+            episode_number=ep_n,
+            episode_title=ep_t,
+            segment_number=plan.get("segment_number"),
+            shot_count=len(plan["shot_groups"]),
+            continuation_rule=continuation,
+            location=plan.get("location", ""),
+            scene_time=plan.get("scene_time", ""),
+            scene_space=plan.get("scene_space", ""),
+            scene_context=plan.get("scene_context", ""),
+            characters=json.dumps(plan.get("characters", []), ensure_ascii=False),
+            total_duration=plan["total_duration"],
+            shots=json.dumps(cls._multi_shot_payload(plan), ensure_ascii=False),
+            style=style,
+            retry_feedback=retry_feedback,
+        )
+
+    @staticmethod
+    def _shot_dialogue(group: List[dict]) -> List[dict]:
+        return [{"unit_id": item["unit_id"], "speaker": item.get("speaker", ""),
+                 "text": scene_merge.strip_markers(item.get("dialogue") or "")}
+                for item in group if item.get("is_dialogue")]
+
+    @staticmethod
+    def _with_dialogue(content: str, dialogue: List[dict]) -> str:
+        lines = [scene_merge.dialogue_line({"speaker": d["speaker"], "dialogue": d["text"]}) for d in dialogue]
+        missing = [line for line, d in zip(lines, dialogue) if d["text"] and d["text"] not in content]
+        content = content.strip()
+        if missing:
+            content = f"{content.rstrip('。')}。{'；'.join(missing)}"
+        return content
+
+    @classmethod
+    def _merged_segment(cls, ep_n: int, plan: dict, shots: List[dict]) -> dict:
+        segment = cls._segment_from_shots(
+            ep_n, int(plan.get("segment_number") or 1), plan.get("location", ""), shots,
+            plan.get("characters", []), plan.get("scene_time", ""), plan.get("scene_space", ""),
+            plan.get("scene_context", ""),
+        )
+        segment["plan_rule"] = scene_merge.PLAN_RULE
+        if plan.get("scene_key"):
+            segment["scene_key"] = plan["scene_key"]
+        if plan.get("continues_previous"):
+            segment["continues_previous"] = True
+        segment["speech_seconds"] = plan["speech_seconds"]
+        return segment
+
+    @classmethod
+    def _normalize_multi_design(cls, ep_n: int, plan: dict, raw_design: Any) -> dict:
+        raw_design = validate_multi_design(raw_design)
+        by_id = {shot["shot_id"]: shot for shot in raw_design["shots"]}
+        expected = [f"S{index}" for index in range(1, len(plan["shot_groups"]) + 1)]
+        if sorted(by_id) != sorted(expected):
+            raise ValueError(f"镜头编号不匹配，应为 {expected}")
+        shots = []
+        for index, (shot_id, group, duration) in enumerate(zip(expected, plan["shot_groups"], plan["shot_durations"])):
+            content = str(by_id[shot_id].get("content") or "").strip()
+            dialogue = cls._shot_dialogue(group)
+            for line in dialogue:
+                if len(line["text"]) >= 4 and line["text"] in content:
+                    raise ValueError(f"{shot_id} 的 content 不应包含台词原文，台词由系统附加")
+            shots.append({
+                "shot_type": cls._normalize_shot_type(by_id[shot_id].get("shot_type"), first=index == 0),
+                "duration": duration,
+                "content": cls._with_dialogue(content, dialogue),
+                "unit_ids": [item["unit_id"] for item in group],
+                "dialogue": dialogue,
+            })
+        return cls._merged_segment(ep_n, plan, shots)
+
+    @classmethod
+    def _fallback_multi_design(cls, ep_n: int, plan: dict) -> dict:
+        characters = plan.get("characters", [])
+        shots = []
+        for index, (group, duration) in enumerate(zip(plan["shot_groups"], plan["shot_durations"])):
+            dialogue = cls._shot_dialogue(group)
+            speakers = list(dict.fromkeys(d["speaker"] for d in dialogue if d["speaker"]))
+            actions = "".join(item["text"].rstrip("。") + "。" for item in group if not item.get("is_dialogue"))
+            if index == 0:
+                shot_type = "中景"
+                lead = cls._opening_camera_prefix(shot_type, characters)
+            elif len(speakers) == 1:
+                shot_type = "近景"
+                lead = f"近景，平视略侧机位拍摄{speakers[0]}，人物面向对话对象。"
+            else:
+                shot_type = "中景"
+                subject = "、".join(speakers or characters) or "场景主体"
+                lead = f"中景，平视侧机位拍摄{subject}，人物沿动作方向或彼此相对。"
+            shots.append({
+                "shot_type": shot_type,
+                "duration": duration,
+                "content": cls._with_dialogue(lead + actions, dialogue),
+                "unit_ids": [item["unit_id"] for item in group],
+                "dialogue": dialogue,
+            })
+        return cls._merged_segment(ep_n, plan, shots)
+
+    async def _design_merged_segment(self, ep_n, ep_t, plan, style, llm_model, sid):
+        prompt = self._build_multi_design_prompt(ep_n, ep_t, plan, style)
+        try:
+            return await self._query_structured(
+                prompt, lambda value: self._normalize_multi_design(ep_n, plan, value),
+                model=llm_model, sid=sid, label="分镜镜头设计", safe_content=False,
+            )
+        except ModelOutputError:
+            self._record_fallback("DETERMINISTIC_SHOT_DESIGN",
+                                  f"第 {ep_n} 集片段 {plan.get('segment_number')} 使用基础镜头设计，请人工确认")
+            fallback = self._fallback_multi_design(ep_n, plan)
+            validate_storyboard([{"episode_number": ep_n, "segments": [fallback]}])
+            return fallback
+
+    @classmethod
+    def _restore_dialogue(cls, segments: List[dict]) -> None:
+        """Continuity patches rewrite whole shot text; spoken lines must survive verbatim."""
+        for segment in segments:
+            if segment.get("plan_rule") != scene_merge.PLAN_RULE:
+                continue
+            for shot in segment.get("shots", []):
+                if shot.get("dialogue"):
+                    shot["content"] = cls._with_dialogue(str(shot.get("content") or ""), shot["dialogue"])
+
+    async def _design_merged_episode(self, ep_n, ep_t, units, style, llm_model, sid, progress_note=None):
+        plans = self._merged_segment_plans(ep_n, units)
+        for plan in plans:
+            if plan["too_long"]:
+                self._record_fallback(
+                    "DIALOGUE_TOO_LONG",
+                    f"第 {ep_n} 集片段 {plan['segment_number']} 的台词约需 {plan['speech_seconds']} 秒，"
+                    f"已按 {scene_merge.MAX_SEGMENT_SECONDS} 秒生成且未截断台词；建议拆句后再确认分镜")
+        if progress_note:
+            progress_note(f"第 {ep_n} 集按同场景合并为 {len(plans)} 个片段，正在设计分镜")
+        pending = [asyncio.create_task(self._design_merged_segment(ep_n, ep_t, plan, style, llm_model, sid))
+                   for plan in plans]
+        try:
+            segments = await asyncio.gather(*pending)
+        finally:
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+        segments = sorted(segments, key=lambda item: int(item.get("segment_number") or 0))
+        if progress_note:
+            progress_note(f"第 {ep_n} 集正在检查人物站位连续性")
+        segments = await self._fix_episode_staging_continuity(ep_n, ep_t, segments, llm_model, sid)
+        self._restore_dialogue(segments)
+        return segments
+
     async def _design_episode_storyboard(
         self,
         ep_n: int,
@@ -829,7 +1028,9 @@ class StoryboardAgent(AgentInterface):
             # it must not fan out into per-segment LLM calls.
             plans = self._fallback_segment_plan(ep_n, units[:1])
         else:
-            plans = await self._plan_episode_segments(ep_n, ep_t, annotated_script, units, characters, settings, llm_model, sid)
+            # Stage 23: segment boundaries are deterministic; the old LLM planner
+            # (_plan_episode_segments) is kept only for compatibility tests.
+            return await self._design_merged_episode(ep_n, ep_t, units, style, llm_model, sid, progress_note)
         if not plans:
             raise Exception(f"第 {ep_n} 集片段规划失败")
 
@@ -1177,6 +1378,9 @@ class StoryboardAgent(AgentInterface):
         style = input_data.get("style") or session_meta.get("style") or "anime"
         pilot_mode = bool(input_data.get("pilot_mode"))
         controlled_episode = bool(input_data.get("controlled_episode"))
+        target_duration = input_data.get("target_duration") or session_meta.get("target_duration")
+        if isinstance(target_duration, bool) or not isinstance(target_duration, int):
+            target_duration = None
         
         # 处理人工干预/修改
         if intervention and "modified_storyboard" in intervention:
@@ -1255,11 +1459,14 @@ class StoryboardAgent(AgentInterface):
                 controlled_episode=controlled_episode,
             )
 
-            return validate_storyboard([{
-                "episode_number": ep_n,
-                "episode_title": ep_t,
-                "segments": segments
-            }])[0]
+            episode = {"episode_number": ep_n, "episode_title": ep_t, "segments": segments}
+            if segments and all(seg.get("plan_rule") == scene_merge.PLAN_RULE for seg in segments):
+                episode["plan_rule"] = scene_merge.PLAN_RULE
+                episode["target_duration"] = target_duration
+                episode.update(scene_merge.episode_duration_summary(episode))
+                if not any(seg.get("scene_key") for seg in segments):
+                    episode["plan_notes"] = ["未识别到场次标题，已按地点文字合并，请检查分段"]
+            return validate_storyboard([episode])[0]
 
         # 核心：支持流式推送增量产物，让前端能看到实时进度
         updated_ep_map = {e["episode_number"]: e for e in existing_story_eps}

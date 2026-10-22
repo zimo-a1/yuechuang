@@ -13,6 +13,10 @@ export interface AssetItem {
   episode_title?: string;
   title?: string;
   duration?: number;
+  review?: {status?: string; score?: number | null; reason?: string; image?: string};
+  generation_error?: {code?: string; message?: string; skipped?: boolean; previous_segment_id?: string};
+  error?: {code?: string; message?: string; skipped?: boolean; previous_segment_id?: string};
+  skipped?: boolean;
 }
 export interface WorkflowShot {
   shot_number?: number;
@@ -21,6 +25,8 @@ export interface WorkflowShot {
   content?: string;
   plot?: string;
   visual_prompt?: string;
+  unit_ids?: string[];
+  dialogue?: unknown;
 }
 export interface ShotBeat {
   unit_id: string;
@@ -43,6 +49,10 @@ export interface WorkflowSegment {
   shot_control?: ShotControl | null;
   shots: WorkflowShot[];
   total_duration?: number;
+  plan_rule?: string;
+  scene_key?: string;
+  continues_previous?: boolean;
+  speech_seconds?: number;
 }
 export interface WorkflowEpisode {
   episode_number?: number;
@@ -52,6 +62,11 @@ export interface WorkflowEpisode {
   title?: string;
   content?: string;
   segments?: WorkflowSegment[];
+  plan_rule?: string;
+  estimated_duration?: number;
+  target_duration?: number;
+  plan_notes?: string[];
+  segment_count?: number;
 }
 export interface LoglineData {
   logline: string;
@@ -73,7 +88,7 @@ export interface ScriptCharacter {
   species?: string;
   occupation?: string;
 }
-export interface ScriptSetting { name: string; description: string }
+export interface ScriptSetting { name: string; description: string; setting_id?: string }
 export interface ScriptScene {
   scene_number: number;
   act?: number;

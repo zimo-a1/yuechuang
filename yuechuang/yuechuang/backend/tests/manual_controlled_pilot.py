@@ -1,7 +1,9 @@
 """Run the one-episode, cost-capped YueChuang episode against a local backend.
 
 Dry-run is the default and makes no network calls.  ``--execute`` creates at
-most one session and follows the normal confirmation-gated stages.  The source is an original synthetic scenario for testing; it contains no external novel text.
+most one session and follows the normal confirmation-gated stages.  The source
+is a short public opening-context note from the official Migu Reading page; it
+does not download or send a full novel.
 """
 
 from __future__ import annotations
@@ -24,8 +26,10 @@ STAGES = [
     "video_generation",
     "post_production",
 ]
-PUBLIC_OPENING_CONTEXT = """原创测试场景：夜班车站。
-一位修理工在末班车出发前发现旅客遗失的时钟，决定追上车将物品归还。
+PUBLIC_OPENING_CONTEXT = """《闯星河》受控试跑素材
+来源：咪咕悦看《闯星河》官方阅读页，作者麦苏。
+范围：只参考公开开篇信息和章节方向，不下载、不复制整本内容。
+故事方向：主角结束一段蛰伏经历后，决定南下，开始新的生活与事业选择。
 请只生成第 1 集，聚焦不超过两位主要人物、两处场景，并按四个 15 秒镜头组织。"""
 PLAN = {
     "episodes": 1,
@@ -184,7 +188,7 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true", help="Allow the capped paid provider calls.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8010")
     args = parser.parse_args()
-    print(json.dumps({"execute": args.execute, "plan": PLAN, "source": "original synthetic testing scenario"}, ensure_ascii=False))
+    print(json.dumps({"execute": args.execute, "plan": PLAN, "source": "official Migu Reading public opening context"}, ensure_ascii=False))
     if not args.execute:
         return 0
     return execute(args.base_url)

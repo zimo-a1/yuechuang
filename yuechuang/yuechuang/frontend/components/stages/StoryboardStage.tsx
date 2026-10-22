@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, Clapperboard, Clock, Code2, Edit3, Film, Loader2, Plus, Save, Trash2, X } from 'lucide-react';
 import Image from 'next/image';
 import type { StageViewProps } from './types';
-import { readStoryboard, storyboardIssues, type StoryboardEpisode, type StoryboardSegment } from '@/lib/storyboard';
+import { continuationLabel, episodeTiming, isMinimaxStartEnd, planNotes, readStoryboard, shotRanges, storyboardIssues, type StoryboardEpisode, type StoryboardSegment } from '@/lib/storyboard';
 import { errorMessage } from '@/lib/workflowTypes';
 import DialogueTimeline from './DialogueTimeline';
 import StageProgress from './StageProgress';
@@ -13,7 +13,7 @@ import VideoPreview from './VideoPreview';
 
 const SHOT_TYPES = ['远景', '中景', '近景', '过肩近景', '特写'];
 
-export default function StoryboardStage({state, onConfirm, onRegenerate, onSaveSelections, showConfirm = true, isRunning, artifacts}: StageViewProps) {
+export default function StoryboardStage({state, onConfirm, onRegenerate, onSaveSelections, showConfirm = true, isRunning, artifacts, projectMeta}: StageViewProps) {
   const loaded = useMemo(() => {
     try {return {episodes: readStoryboard(state.artifact?.episodes || state.artifact?.payload?.episodes || []), error: ''};}
     catch (error) {return {episodes: [] as StoryboardEpisode[], error: errorMessage(error, '分镜数据无法读取，请重新打开项目。')};}
@@ -40,6 +40,16 @@ export default function StoryboardStage({state, onConfirm, onRegenerate, onSaveS
   const selectedImage = artifacts?.reference_generation?.scenes?.find(scene => scene.id === activeId)?.selected;
   const selectedVideo = artifacts?.video_generation?.clips?.find(clip => clip.id === activeId)?.selected;
   const showVideo = !!selectedVideo && (previewTab === 'video' || !selectedImage);
+  const videoMode = projectMeta?.video_generation_mode;
+  const videoModel = videoMode === 'start_end_frame' ? projectMeta?.video_start_end_model || projectMeta?.video_model : projectMeta?.video_model;
+  const minimax = isMinimaxStartEnd(videoMode, videoModel);
+  const navGroups = segments.reduce<{key: string; items: typeof segments}[]>((groups, item) => {
+    const key = item.segment.scene_key || '';
+    const last = groups[groups.length - 1];
+    if (key && last?.key === key) last.items.push(item);
+    else groups.push({key, items: [item]});
+    return groups;
+  }, []);
 
   useEffect(() => {
     if (!editing) return;
@@ -94,24 +104,36 @@ export default function StoryboardStage({state, onConfirm, onRegenerate, onSaveS
       {state.status === 'running' && <StageProgress message={state.progressMessage} progress={state.progress} color="blue" />}
       {!loaded.episodes.length && !editing && <div className="sb-empty"><Clapperboard size={36} /><h3>{loaded.error ? '分镜暂时无法显示' : state.status === 'running' ? '正在准备分镜' : '还没有分镜'}</h3><p>分镜生成后，可以在这里审核镜头、安排对白和调整时长。</p></div>}
       <div className="sb-workspace">
-        {segments.length > 0 && <nav className="sb-navigator" aria-label="片段列表"><div className="sb-panel-label">故事片段 <span>{segmentCount}</span></div><div className="sb-nav-list">{segments.map(({episode, segment}, index) => {
-          const thumbnail = artifacts?.reference_generation?.scenes?.find(scene => scene.id === segment.segment_id)?.selected;
-          return <button type="button" key={segment.segment_id} aria-pressed={activeId === segment.segment_id} onClick={() => setSelectedId(segment.segment_id)} className="sb-nav-item">
-            <span className="sb-nav-thumb">{thumbnail ? <Image unoptimized src={assetUrl(thumbnail)} width={160} height={90} alt="" /> : <Clapperboard size={22} />}<span>{String(index + 1).padStart(2, '0')}</span></span>
-            <strong>{segment.location || '待填写场景'}</strong><small>第 {episode} 集 · {segment.total_duration} 秒{issues.some(issue => issue.segmentId === segment.segment_id) ? ' · 待调整' : ''}</small>
-          </button>;
+        {segments.length > 0 && <nav className="sb-navigator" aria-label="片段列表"><div className="sb-panel-label">故事片段 <span>{segmentCount}</span></div><div className="sb-nav-list">{navGroups.map(group => {
+          const buttons = group.items.map(({episode, segment}) => {
+            const index = segments.findIndex(item => item.segment.segment_id === segment.segment_id);
+            const thumbnail = artifacts?.reference_generation?.scenes?.find(scene => scene.id === segment.segment_id)?.selected;
+            const link = continuationLabel(segment, videoMode, videoModel);
+            return <button type="button" key={segment.segment_id} aria-pressed={activeId === segment.segment_id} onClick={() => setSelectedId(segment.segment_id)} className="sb-nav-item">
+              <span className="sb-nav-thumb">{thumbnail ? <Image unoptimized src={assetUrl(thumbnail)} width={160} height={90} alt="" /> : <Clapperboard size={22} />}<span>{String(index + 1).padStart(2, '0')}</span></span>
+              <strong>{segment.location || '待填写场景'}</strong><small>第 {episode} 集 · {segment.total_duration} 秒{link ? ` · ${link}` : ''}{issues.some(issue => issue.segmentId === segment.segment_id) ? ' · 待调整' : ''}</small>
+            </button>;
+          });
+          return group.key && group.items.length > 1 ? <div className="sb-scene-group" key={group.key + group.items[0].segment.segment_id}>{buttons}</div> : buttons;
         })}</div></nav>}
         <div className="sb-editor">
       {editing && rawMode ? <label className="sb-raw">分镜 JSON<textarea disabled={locked} value={raw} onChange={e => setRaw(e.target.value)} spellCheck={false} /></label> :
         episodes.map((episode, epIndex) => !episode.segments.some(segment => segment.segment_id === activeId) ? null : <section key={epIndex} className="sb-episode" aria-label={`第 ${episode.episode_number} 集分镜`}>
-          <div className="sb-episode-heading"><h3>第 {episode.episode_number} 集 <span>{episode.episode_title || '未命名剧集'}</span></h3><span>{episode.segments.length} 个片段</span></div>
+          {(() => { const timing = episodeTiming(episode, projectMeta?.target_duration); const notes = planNotes(episode); return <>
+          <div className="sb-episode-heading"><h3>第 {episode.episode_number} 集 <span>{episode.episode_title || '未命名剧集'}</span></h3><span className={timing.over ? 'sb-duration-over' : ''} data-over={timing.over || undefined}>{timing.text}</span><span>{episode.segments.length} 个片段</span></div>
+          {notes.length > 0 && <ul className="sb-plan-notes">{notes.map(note => <li key={note}>{note}</li>)}</ul>}
+          </>})()}
           {episode.segments.map((segment, segIndex) => {
             if (segment.segment_id !== activeId) return null;
             const segIssues = issues.filter(issue => issue.segmentId === segment.segment_id);
             const setSegment = (value: StoryboardSegment) => updateSegment(epIndex, segIndex, value);
             const setShots = (shots: StoryboardSegment['shots']) => setSegment({...segment, shots, total_duration: shots.reduce((sum, shot) => sum + shot.duration, 0)});
+            const ranges = shotRanges(segment);
+            const link = continuationLabel(segment, videoMode, videoModel);
+            const segmentSeconds = Number.isFinite(segment.total_duration) ? segment.total_duration : 0;
             return <article className="sb-segment" key={segment.segment_id}>
-              <div className="sb-segment-heading"><span className="sb-segment-index">{String(segment.segment_number).padStart(2, '0')}</span><div><h4>{segment.location || '待填写场景'}</h4><p>{(segment.characters || []).join(' / ') || '尚未指定人物'}</p></div><span className="sb-duration">{Number.isFinite(segment.total_duration) ? segment.total_duration : '—'} 秒</span></div>
+              <div className="sb-segment-heading"><span className="sb-segment-index">{String(segment.segment_number).padStart(2, '0')}</span><div><h4>{segment.location || '待填写场景'}</h4><p>{(segment.characters || []).join(' / ') || '尚未指定人物'}</p></div>{link && <span className="sb-continuation">{link}</span>}<span className="sb-duration">{Number.isFinite(segment.total_duration) ? segment.total_duration : '—'} 秒</span></div>
+              {minimax && (segmentSeconds < 5 || segmentSeconds > 15) && <p className="sb-plan-notes">MiniMax 首尾帧每段只支持 5–15 秒，当前这段是 {segmentSeconds} 秒。</p>}
               {editing && <fieldset className="sb-segment-fields" disabled={locked}>
                 <label>场景<input value={segment.location || ''} onChange={e => setSegment({...segment, location: e.target.value})} /></label>
                 <label>出场人物（用顿号分隔）<input value={characterText[segment.segment_id] ?? (segment.characters || []).join('、')} onChange={e => {setCharacterText(prev => ({...prev, [segment.segment_id]: e.target.value})); setSegment({...segment, characters: e.target.value.split(/[、,，]/).map(name => name.trim()).filter(Boolean)});}} /></label>
@@ -124,7 +146,7 @@ export default function StoryboardStage({state, onConfirm, onRegenerate, onSaveS
                   <label>时长（秒）<input type="number" min="1" step="1" value={Number.isFinite(shot.duration) ? shot.duration : ''} onChange={e => setShots(segment.shots.map((item, i) => i === shotIndex ? {...item, duration: e.target.valueAsNumber} : item))} /></label>
                   <label className="sb-shot-description">画面描述<textarea rows={2} value={shot.content} onChange={e => setShots(segment.shots.map((item, i) => i === shotIndex ? {...item, content: e.target.value} : item))} /></label>
                   <button type="button" className="sb-icon-button" aria-label={`删除镜头 ${shot.shot_number}`} disabled={segment.shots.length === 1} onClick={() => {if (window.confirm('删除这个镜头？片段总时长会相应减少，请同时检查对白时间。')) setShots(segment.shots.filter((_, i) => i !== shotIndex).map((item, i) => ({...item, shot_number: i + 1})));}}><Trash2 size={16} /></button>
-                </fieldset> : <><div className="sb-shot-meta"><span>镜头 {shot.shot_number}</span><strong>{shot.shot_type}</strong><span>{shot.duration} 秒</span></div><p>{shot.content}</p></>}
+                </fieldset> : <><div className="sb-shot-meta"><span>镜头 {shot.shot_number}</span><strong>{shot.shot_type}</strong><span>{ranges ? `${ranges[shotIndex].start}–${ranges[shotIndex].end}s` : `${shot.duration} 秒`}</span></div><p>{shot.content}</p></>}
               </div>)}</div>
               {editing && <button type="button" disabled={locked} className="sb-button sb-button-secondary sb-add-shot" onClick={() => setShots([...segment.shots, {shot_number: segment.shots.length + 1, shot_type: '中景', duration: 3, content: ''}])}><Plus size={16} />添加镜头</button>}
               <DialogueTimeline segment={segment} editing={editing} disabled={locked} issues={segIssues} onChange={setSegment} />

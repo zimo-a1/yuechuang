@@ -373,7 +373,7 @@ export async function fetchProjectDetail(id: string): Promise<ProjectDetail> {
   const response = await projectRequest(`/api/projects/${encodeURIComponent(id)}`);
   await requireOkResponse(response, '项目读取失败'); return response.json();
 }
-export async function createEpisode(id: string, values: {title: string; video_resolution: string}, key: string): Promise<DraftProject> {
+export async function createEpisode(id: string, values: {title: string; video_resolution: string; target_duration?: number}, key: string): Promise<DraftProject> {
   const response = await projectRequest(`/api/projects/${encodeURIComponent(id)}/episodes`, {method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(values)});
   await requireOkResponse(response, '添加剧集失败'); return response.json();
 }

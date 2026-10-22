@@ -134,13 +134,16 @@ def correction_feedback(diagnostic, kind=None, data=None):
                 '必须提供 omitted_event_reason，对所有未采用事件说明本轮聚焦与取舍理由；omissions 只列例外，没有则 []。'
                 '选用与省略编号不能重复或重叠。summary/理由最多 2000 字，title 最多 120 字，'
                 f'每集 characters 最多 {capacity["max_characters_per_episode"]} 人、event_ids 最多 {capacity["max_events_per_episode"]} 项，'
-                '只关联本集确实拍摄的事件，不关联只提到背景的整章所有事件。返回完整 JSON。')
+                '只关联本集确实拍摄的事件，不关联只提到背景的整章所有事件。'
+                '每集 complete_event 用 2—120 字写一件在本集内做完的事，各集不得相同，同一条 event_id 不得出现在两集。'
+                '第 1 集 hook 必填，2—120 字，写开场钩子；其余集 hook 用空字符串。返回完整 JSON。')
     if kind == 'script':
         return (f'上次输出未通过校验（{diagnostic}）。只写选定一集，所有场景 duration 必须为整数且相加恰好 {data["target_duration"]} 秒。'
                 f'所有 speaker 只能从 {data["selected_episode"]["characters"]} 中逐字选择，不得用旁白、职位、姓名加括号。'
                 '若为内心声/画外音，speaker 仍写对应人物主名，在 action 说明声音形式；未知背景人物仅作非对白的环境交代。'
                 '完整覆盖 selected_episode.event_ids；本场所有有台词的人列入 characters。'
-                '每句对白只输出 speaker/text，原文或创作标记由程序核对；没有原著事件的场景 creative_addition 必须为 true。返回完整 JSON。')
+                '每句对白只输出 speaker/text，原文或创作标记由程序核对；单句去掉空白后不超过 35 字，全部对白按每秒 4.5 字必须塞得进本集时长。'
+                '每场 action 至少 4 字，写看得见的动作，不要只写一句引号里的话。没有原著事件的场景 creative_addition 必须为 true。返回完整 JSON。')
     if kind == 'direction':
         return (f'上次输出未通过校验（{diagnostic}）。focus_characters 只能来自 bible 人物主名，'
                 f'情节应适合 {data["episode_count"]} 集、每集 {data["target_duration"]} 秒。'

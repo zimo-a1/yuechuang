@@ -84,9 +84,9 @@ class IPCatalog(StrictModel):
 
     @field_validator('source_url')
     @classmethod
-    def source_is_supported(cls, value):
+    def source_is_cmread(cls, value):
         url = urlsplit(value)
-        if url.scheme != 'https' or url.netloc != 'catalog.example.com':
+        if url.scheme != 'https' or url.netloc != 'www.cmread.com':
             raise ValueError('仅接受已支持的作品来源地址')
         return value
 

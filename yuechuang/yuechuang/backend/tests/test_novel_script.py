@@ -62,6 +62,10 @@ def test_shared_alias_or_another_canonical_name_does_not_change_identity():
     ({'event_ids':[],'creative_addition':True},'missing_planned_events'),
     ({'event_ids':[],'creative_addition':False},'unattributed_scene'),
     ({'characters':['未知人']},'unknown_scene_character'),
+    ({'action':'走'},'scene_without_action'),
+    ({'action':'“他想起了母亲”'},'scene_without_action'),
+    ({'dialogue':[{'speaker':'林舟','text':'灯'*36,'creative_addition':True}]},'line_too_long'),
+    ({'dialogue':[{'speaker':'林舟','text':'灯'*35,'creative_addition':True}]*9},'dialogue_too_long'),
 ])
 def test_metadata_reconciliation_does_not_relax_other_contracts(patch,diagnostic):
     draft=copy.deepcopy(DRAFT);draft['scenes'][0].update(patch)

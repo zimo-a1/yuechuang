@@ -318,8 +318,9 @@ async def test_invalid_output_is_persisted_as_specific_task_error(tmp_path):
 async def test_full_storyboard_fallback_requires_review_and_persists_warning(monkeypatch):
     agent = StoryboardAgent()
     _, units = agent._annotate_episode_script(TEXT, META['characters'], META['settings'])
-    fake = FakeLLM([encoded([{'unit_ids': [unit['unit_id'] for unit in units]}]),
-                   '{}', '{}', '{}', encoded({'patches': [], 'issues': []})])
+    # Stage 23: segment boundaries are planned by code, so the episode makes no
+    # segment-plan request: 3 bounded design attempts + 1 continuity review.
+    fake = FakeLLM(['{}', '{}', '{}', encoded({'patches': [], 'issues': []})])
     monkeypatch.setattr('models.llm_client.LLM', lambda: fake)
     events = []
     agent.set_progress_callback(lambda *args: events.append(args))
@@ -332,7 +333,8 @@ async def test_full_storyboard_fallback_requires_review_and_persists_warning(mon
     previews = [event[3]['assets_preview'] for event in events
                 if event[3] and 'assets_preview' in event[3]]
     assert previews[-1]['validation_warnings'] == result['payload']['validation_warnings']
-    assert len(fake.calls) == 5
+    assert len(fake.calls) == 4
+    assert not any('划分成视频生成片段' in prompt for prompt in fake.calls)
 
 
 async def test_storyboard_failure_cancels_other_episode_work(monkeypatch):

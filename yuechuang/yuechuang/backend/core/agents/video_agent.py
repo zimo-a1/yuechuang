@@ -10,8 +10,10 @@
 import os
 import re
 import glob
+import hashlib
 import asyncio
 import logging
+import subprocess
 from typing import Any, Optional, Dict, List
 from concurrent.futures import as_completed
 from core.configuration_runtime import ContextThreadPoolExecutor as ThreadPoolExecutor
@@ -23,6 +25,11 @@ from models.video_tudou import TudouVideoClient, VideoInputError
 from core.service_settings import SettingsError
 
 logger = logging.getLogger(__name__)
+MINIMAX_CONTINUATION_MODEL = "MiniMax-H3-Max-Turbo"
+CONTINUATION_BLOCKED_CODE = "CONTINUATION_PREVIOUS_FAILED"
+CONTINUATION_BLOCKED_MESSAGE = "上一段生成失败，本段未提交，避免续接失效后白白扣费；可稍后重新生成"
+CONTINUATION_NO_END_FRAME_REASON = "续接段只用上一段末帧做首帧，不传尾帧，避免结尾被拉回本段开场构图"
+CONTINUATION_FALLBACK_REASON = "未取到上一段末帧，改用本段参考图（首尾帧照旧）"
 
 
 class VideoDirectorAgent(AgentInterface):
@@ -33,6 +40,9 @@ class VideoDirectorAgent(AgentInterface):
         self.video_usage_guard = None
         self._episode_by_segment = {}
         self._regenerate_ids = set()
+        self._run_failed = set()   # 本轮已尝试但没有产出视频的片段
+        self._blocked = {}         # 本轮因上一段失败而未提交的片段 → 错误信息
+        self._frames = {}          # 本轮同场景续接段实际用了哪些帧（不含密钥）
 
     # ─── 版本管理 ───
 
@@ -69,16 +79,30 @@ class VideoDirectorAgent(AgentInterface):
 
     # ─── 视频生成 ───
 
-    def _generate_one(self, sid: str, segment_id: str, prompt: str,
-                      img_path: Optional[str], video_model: str,
-                      duration: int = 10, sound: str = "",
-                      shot_type: str = "multi",
-                      video_ratio: str = "16:9",
-                      video_resolution: str = "720P",
-                      video_generation_mode: str = "first_frame",
-                      last_image_path: Optional[str] = None,
-                      reference_image_paths: Optional[List[str]] = None) -> tuple:
-        """生成单个视频片段，返回 (segment_id, path_or_None)"""
+    def _generate_one(self, sid: str, segment_id: str, *args, **kwargs) -> tuple:
+        """生成单个视频片段，返回 (segment_id, path_or_None)。
+
+        没有产出视频的片段记入本轮失败名单。任务在提交时（不是排队时）检查这个名单，
+        所以同场景下一段能知道上一段刚刚失败。
+        """
+        result = (segment_id, None)
+        try:
+            result = self._generate_clip(sid, segment_id, *args, **kwargs)
+            return result
+        finally:
+            if not result[1]:
+                self._run_failed.add(segment_id)
+
+    def _generate_clip(self, sid: str, segment_id: str, prompt: str,
+                       img_path: Optional[str], video_model: str,
+                       duration: int = 10, sound: str = "",
+                       shot_type: str = "multi",
+                       video_ratio: str = "16:9",
+                       video_resolution: str = "720P",
+                       video_generation_mode: str = "first_frame",
+                       last_image_path: Optional[str] = None,
+                       reference_image_paths: Optional[List[str]] = None,
+                       previous_segment: Optional[dict] = None) -> tuple:
         if self.cancellation_check and self.cancellation_check():
             logger.info(f"VideoDirectorAgent: {segment_id} 跳过（用户取消）")
             return segment_id, None
@@ -94,6 +118,35 @@ class VideoDirectorAgent(AgentInterface):
         elif not img_path or (not img_path.startswith("https://") and not os.path.exists(img_path)):
             logger.warning(f"Image missing for {segment_id}: {img_path}")
             return segment_id, None
+        elif previous_segment is not None:
+            previous_id = previous_segment.get("segment_id") or ""
+            if previous_id in self._run_failed and not self._latest_clip(sid, previous_id):
+                # 上一段本轮刚失败：续接已不成立。本段不提交（不扣费），留待重新生成。
+                logger.warning("同场景上一段本轮失败，本段未提交: %s", segment_id)
+                self._blocked[segment_id] = {
+                    "code": CONTINUATION_BLOCKED_CODE,
+                    "message": CONTINUATION_BLOCKED_MESSAGE,
+                    "previous_segment_id": previous_id,
+                }
+                return segment_id, None
+            frame = self._continuation_frame(sid, previous_segment)
+            if frame:
+                img_path = frame
+                # 只给首帧：尾帧若用本段参考图（多为开场构图），模型会把结尾拉回开场画面（2026-10-12 小样发现）。
+                # ToAPIs MiniMax-H3-Max-Turbo 支持“提示词 + 一张 first_frame”的首帧模式。
+                last_image_path = None
+                self._frames[segment_id] = {
+                    "first_frame": "previous_last_frame", "previous_segment_id": previous_id,
+                    "end_frame": "none", "reason": CONTINUATION_NO_END_FRAME_REASON,
+                }
+            else:
+                # 上一段有视频但抽帧失败（或上一段不在本轮且没有视频）：保持原行为，改用本段参考图提交。
+                logger.info("同场景续接未取到上一段末帧，改用本段参考图: %s", segment_id)
+                self._frames[segment_id] = {
+                    "first_frame": "own_reference", "previous_segment_id": previous_id,
+                    "end_frame": "own_reference" if last_image_path else "none",
+                    "reason": CONTINUATION_FALLBACK_REASON,
+                }
 
         save_path = self._next_version_path(sid, segment_id)
         try:
@@ -119,6 +172,8 @@ class VideoDirectorAgent(AgentInterface):
                 last_image_path=last_image_path if video_generation_mode == "start_end_frame" else None,
                 reference_image_paths=reference_image_paths if video_generation_mode == "reference" else None,
             )
+            if segment_id in self._frames:
+                self._frames[segment_id]["clip"] = save_path
             return segment_id, save_path
         except (QuotaExceeded, SettingsError):
             raise
@@ -134,6 +189,10 @@ class VideoDirectorAgent(AgentInterface):
     # ─── 提示词组装 ───
 
     def _format_shot_section(self, segment: dict) -> str:
+        from core import scene_merge
+        if segment.get("plan_rule") == scene_merge.PLAN_RULE:
+            # Stage 23 multi-shot segment: one line per sub-shot with its time range.
+            return scene_merge.format_timeline(segment)
         prompt = "分镜列表："
         shots = segment.get("shots", [])
         for i, shot in enumerate(shots, 1):
@@ -263,6 +322,113 @@ class VideoDirectorAgent(AgentInterface):
         return path if path and (path.startswith("https://") or os.path.exists(path)) else None
 
     @staticmethod
+    def _scene_continuation(model: str, mode: str) -> bool:
+        from core.service_settings import raw_model
+        return raw_model(model) == MINIMAX_CONTINUATION_MODEL and mode == "start_end_frame"
+
+    @staticmethod
+    def _output_resolution(model: str, mode: str, resolution: str) -> str:
+        if VideoDirectorAgent._scene_continuation(model, mode) and str(resolution).upper() == "720P":
+            return "768P"
+        return resolution
+
+    def _same_scene(self, previous: Optional[dict], current: Optional[dict]) -> bool:
+        if not previous or not current:
+            return False
+        prev_ep = previous.get("episode_number", self._episode_by_segment.get(previous.get("segment_id")))
+        cur_ep = current.get("episode_number", self._episode_by_segment.get(current.get("segment_id")))
+        if prev_ep is not None and cur_ep is not None and prev_ep != cur_ep:
+            return False
+        left = str(previous.get("location") or "").strip()
+        right = str(current.get("location") or "").strip()
+        if not left or left != right:
+            return False
+        prev_key = str(previous.get("scene_key") or "").strip()
+        cur_key = str(current.get("scene_key") or "").strip()
+        return not (prev_key and cur_key and prev_key != cur_key)
+
+    def _latest_clip(self, sid: str, segment_id: str) -> Optional[str]:
+        versions = self._list_versions(sid, segment_id)
+        return versions[-1] if versions else None
+
+    def _continuation_frame(self, sid: str, previous: dict) -> Optional[str]:
+        video = self._latest_clip(sid, previous.get("segment_id") or "")
+        if not video:
+            return None
+        return self._extract_last_frame(sid, previous["segment_id"], video)
+
+    def _extract_last_frame(self, sid: str, segment_id: str, video_path: str) -> Optional[str]:
+        """Decode the previous clip locally. A failed extract never becomes a paid request."""
+        if not video_path or not os.path.isfile(video_path):
+            return None
+        temporary = ""
+        try:
+            from PIL import Image
+            from upload_validation import ffmpeg_executable
+            executable = ffmpeg_executable()
+            stat = os.stat(video_path)
+            token = hashlib.sha256(f"{os.path.abspath(video_path)}:{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()[:16]
+            dest_dir = os.path.join(self._video_base(sid), "continuation")
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, f"{segment_id}_{token}.png")
+            if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+                return dest
+            temporary = dest + ".writing.png"
+            counted = subprocess.run(
+                [executable, "-nostdin", "-hide_banner", "-protocol_whitelist", "file,pipe",
+                 "-i", video_path, "-map", "0:v:0", "-f", "null", "-"],
+                capture_output=True, timeout=120, text=True,
+            )
+            frames = [int(item) for item in re.findall(r"frame=\s*(\d+)", counted.stderr or "")]
+            if counted.returncode != 0 or not frames or frames[-1] < 1:
+                return None
+            extracted = subprocess.run(
+                [executable, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                 "-protocol_whitelist", "file,pipe", "-i", video_path,
+                 "-vf", f"select=eq(n\\,{frames[-1] - 1})", "-frames:v", "1", temporary],
+                capture_output=True, timeout=120,
+            )
+            if extracted.returncode != 0 or not os.path.isfile(temporary) or os.path.getsize(temporary) <= 0:
+                if os.path.exists(temporary):
+                    os.remove(temporary)
+                return None
+            with Image.open(temporary) as image:
+                image.verify()
+            os.replace(temporary, dest)
+            return dest
+        except Exception:
+            if temporary and os.path.exists(temporary):
+                os.remove(temporary)
+            logger.info("同场景续接抽帧失败: %s", segment_id)
+            return None
+
+    def _clip_request(self, sid: str, segments: list, index: int, segment: dict, scene_map: dict,
+                      character_art: dict, mode: str, model: str, resolution: str) -> dict:
+        reference_image_paths = None
+        previous = None
+        img_path = None
+        last_img_path = None
+        if mode == "reference":
+            reference_image_paths = self._get_segment_reference_assets(segment, character_art)
+        elif mode in {"first_frame", "start_end_frame"}:
+            img_path = self._get_reference_image(sid, segment["segment_id"], scene_map)
+            if self._scene_continuation(model, mode):
+                last_img_path = img_path
+                if index:
+                    candidate = segments[index - 1]
+                    if self._same_scene(candidate, segment):
+                        previous = candidate
+            elif mode == "start_end_frame":
+                last_img_path = self._get_next_reference_image(sid, index, segments, scene_map)
+        return {
+            "img_path": img_path,
+            "last_img_path": last_img_path,
+            "reference_image_paths": reference_image_paths,
+            "previous": previous,
+            "resolution": self._output_resolution(model, mode, resolution),
+        }
+
+    @staticmethod
     def _asset_selected_path(asset: dict) -> str:
         selected = asset.get("selected") or ""
         if selected and (selected.startswith("https://") or os.path.exists(selected)):
@@ -386,7 +552,7 @@ class VideoDirectorAgent(AgentInterface):
             versions = self._list_versions(sid, segment_id)
             ep_n = seg.get('episode_number', 1)
             seg_n = seg.get('segment_number', idx)
-            clips.append({
+            clip = {
                 "id": segment_id,
                 "name": f"第{ep_n}集-片段{seg_n}",
                 "episode": ep_n,
@@ -396,7 +562,20 @@ class VideoDirectorAgent(AgentInterface):
                 "selected": versions[-1] if versions else "",
                 "versions": versions,
                 "status": "done" if versions else "failed",
-            })
+            }
+            # 未提交的片段状态仍是 failed（后期、重试都按失败处理），另记原因便于查看。
+            error = self._blocked.get(segment_id)
+            if error is None and not versions and segment_id not in self._run_failed:
+                error = (clip_map.get(segment_id) or {}).get("generation_error")
+            if isinstance(error, dict):
+                clip["generation_error"] = dict(error)
+            # 续接段用了哪些帧：只挂在对应的那一版视频上
+            frames = self._frames.get(segment_id)
+            if not (frames and frames.get("clip") == clip["selected"]):
+                frames = (clip_map.get(segment_id) or {}).get("frames")
+            if isinstance(frames, dict) and frames.get("clip") and frames.get("clip") == clip["selected"]:
+                clip["frames"] = dict(frames)
+            clips.append(clip)
         return {
             "payload": {
                 "session_id": sid,
@@ -404,6 +583,24 @@ class VideoDirectorAgent(AgentInterface):
             },
             "stage_completed": True,
         }
+
+    def _failed_step(self, segment_id: str) -> str:
+        return f"未提交: {segment_id}" if segment_id in self._blocked else f"失败: {segment_id}"
+
+    def _done_progress(self, segment_id: str, path: str, versions: list) -> dict:
+        update = {"type": "clips", "id": segment_id, "status": "done", "selected": path, "versions": versions}
+        if segment_id in self._frames:
+            update["frames"] = dict(self._frames[segment_id])
+        return {"asset_complete": update}
+
+    def _failed_progress(self, segment_id: str) -> dict:
+        update = {"type": "clips", "id": segment_id, "status": "failed", "selected": "", "versions": []}
+        if segment_id in self._blocked:
+            update["skipped"] = True
+            update["error"] = dict(self._blocked[segment_id])
+        elif segment_id in self._frames:
+            update["frames"] = dict(self._frames[segment_id])
+        return {"asset_complete": update}
 
     def _update_session_video_data(self, sid: str, segments: list, style_prompt: str) -> None:
         """保留兼容入口；session 状态统一由 WorkflowEngine 持久化。"""
@@ -444,6 +641,8 @@ class VideoDirectorAgent(AgentInterface):
         enable_concurrency = False if cost_controlled else input_data.get("enable_concurrency", True)
         from models.config_model import get_max_concurrency
         concurrency = get_max_concurrency(video_model, enable_concurrency)
+        if self._scene_continuation(video_model, video_generation_mode):
+            concurrency = 1
         
         video_ratio = input_data.get("video_ratio", "16:9")
         video_resolution = input_data.get("video_resolution", "720P")
@@ -469,6 +668,9 @@ class VideoDirectorAgent(AgentInterface):
             for ep in episodes for seg in ep.get('segments', [])
         }
         self._regenerate_ids = set((intervention or {}).get('regenerate_clips') or [])
+        self._run_failed = set()
+        self._blocked = {}
+        self._frames = {}
         video_clips = artifacts.get('video_generation', {}).get('clips', [])
 
         # 2. 获取参考图路径映射 (从 Reference Generation)
@@ -494,18 +696,19 @@ class VideoDirectorAgent(AgentInterface):
             if segment.get("shot_control"):
                 validate_shot_control({**segment, "total_duration": duration})
             from core.service_settings import raw_model, validate_video_options
-            validate_video_options(video_model, ratio=video_ratio, resolution=video_resolution, duration=duration, mode=video_generation_mode)
+            request = self._clip_request(sid, segments, index, segment, scene_map, character_art, video_generation_mode, video_model, video_resolution)
+            validate_video_options(video_model, ratio=video_ratio, resolution=request["resolution"], duration=duration, mode=video_generation_mode)
             if raw_model(video_model) in {"grok-imagine-video-1.5", "grok-video-1.5", "MiniMax-H3-Max-Turbo"}:
-                refs = self._get_segment_reference_assets(segment, character_art) if video_generation_mode == "reference" else None
-                first = self._get_reference_image(sid, seg_id, scene_map) if video_generation_mode in {"first_frame", "start_end_frame"} else None
-                last = self._get_next_reference_image(sid, index, segments, scene_map) if video_generation_mode == "start_end_frame" else None
+                refs = request["reference_image_paths"] if video_generation_mode == "reference" else None
+                first = request["img_path"] if video_generation_mode in {"first_frame", "start_end_frame"} else None
+                last = request["last_img_path"] if video_generation_mode == "start_end_frame" else None
                 if (video_generation_mode == "reference" and not refs) or (video_generation_mode in {"first_frame", "start_end_frame"} and not first) or (video_generation_mode == "start_end_frame" and not last):
                     raise VideoInputError("所选视频模式缺少参考图片，请补齐素材；不会自动回退为文生视频或首帧模式")
                 if raw_model(video_model) == "grok-imagine-video-1.5":
-                    TudouVideoClient.build_request("preflight", first, raw_model(video_model), duration, video_ratio, video_resolution, last, refs)
+                    TudouVideoClient.build_request("preflight", first, raw_model(video_model), duration, video_ratio, request["resolution"], last, refs)
                 else:
                     from models.media_toapis import video_request
-                    video_request("preflight", first, raw_model(video_model), duration, video_ratio, video_resolution, last, refs)
+                    video_request("preflight", first, raw_model(video_model), duration, video_ratio, request["resolution"], last, refs)
 
         # ═══ 介入：重新生成指定片段 ═══
         if intervention:
@@ -516,6 +719,9 @@ class VideoDirectorAgent(AgentInterface):
                 self._report_progress("视频生成", "重新生成中...", 5)
                 segment_map = {s['segment_id']: s for s in segments}
                 clip_map = {c['id']: c for c in video_clips}
+                if self._scene_continuation(video_model, video_generation_mode):
+                    order = {segment["segment_id"]: index for index, segment in enumerate(segments)}
+                    regen_ids = sorted(regen_ids, key=lambda item: order.get(item, 10**9))
                 
                 def regen_run():
                     quota_error = None
@@ -527,22 +733,16 @@ class VideoDirectorAgent(AgentInterface):
                             clip = clip_map.get(seg_id) if clip_map.get(seg_id) else None
                             if not seg: continue
                             prompt = self._assemble_prompt(seg, style_prompt, character_art, video_data=clip)
-
-                            reference_image_paths = None
-                            if video_generation_mode == "text":
-                                img_path = None
-                            elif video_generation_mode == "reference":
-                                img_path = None
-                                reference_image_paths = self._get_segment_reference_assets(seg, character_art)
-                                if not reference_image_paths:
-                                    logger.warning("VideoDirectorAgent: %s 参考图模式未匹配到第二阶段人物/场景图", seg_id)
-                            else:
-                                img_path = self._get_reference_image(sid, seg_id, scene_map)
-                            duration = 15 if controlled_episode else 6 if pilot_mode else seg.get("total_duration", 10)
                             seg_index = segments.index(seg)
-                            last_img_path = self._get_next_reference_image(sid, seg_index, segments, scene_map)
+                            request = self._clip_request(sid, segments, seg_index, seg, scene_map, character_art, video_generation_mode, video_model, video_resolution)
+                            img_path = request["img_path"]
+                            reference_image_paths = request["reference_image_paths"]
+                            last_img_path = request["last_img_path"]
+                            if video_generation_mode == "reference" and not reference_image_paths:
+                                logger.warning("VideoDirectorAgent: %s 参考图模式未匹配到第二阶段人物/场景图", seg_id)
                             if video_generation_mode == "start_end_frame" and not last_img_path:
                                 logger.warning("VideoDirectorAgent: %s 首尾帧模式缺少尾帧，回退为首帧生视频入参", seg_id)
+                            duration = 15 if controlled_episode else 6 if pilot_mode else seg.get("total_duration", 10)
                             existing_versions = self._list_versions(sid, seg_id)
                             self._report_progress("视频生成", f"启动生成: {seg_id}", 5, data={
                                 "asset_complete": {
@@ -554,8 +754,8 @@ class VideoDirectorAgent(AgentInterface):
                             fut = executor.submit(
                                 self._generate_one, sid, seg_id, prompt,
                                 img_path, video_model, duration,
-                                video_sound, video_shot_type, video_ratio, video_resolution,
-                                video_generation_mode, last_img_path, reference_image_paths
+                                video_sound, video_shot_type, video_ratio, request["resolution"],
+                                video_generation_mode, last_img_path, reference_image_paths, request["previous"]
                             )
                             futs[fut] = seg_id
                         for fut in as_completed(futs):
@@ -572,22 +772,11 @@ class VideoDirectorAgent(AgentInterface):
                             pct = 5 + int(90 * done / max(1, len(regen_ids)))
                             if res_path:
                                 versions = self._list_versions(sid, sid_done)
-                                self._report_progress("视频生成", f"完成: {sid_done}", pct, data={
-                                    "asset_complete": {
-                                        "type": "clips", "id": sid_done,
-                                        "status": "done",
-                                        "selected": res_path,
-                                        "versions": versions,
-                                    }
-                                })
+                                self._report_progress("视频生成", f"完成: {sid_done}", pct,
+                                                      data=self._done_progress(sid_done, res_path, versions))
                             else:
-                                self._report_progress("视频生成", f"失败: {sid_done}", pct, data={
-                                    "asset_complete": {
-                                        "type": "clips", "id": sid_done,
-                                        "status": "failed",
-                                        "selected": "", "versions": [],
-                                    }
-                                })
+                                self._report_progress("视频生成", self._failed_step(sid_done), pct,
+                                                      data=self._failed_progress(sid_done))
                     if quota_error:
                         raise quota_error
                 loop = asyncio.get_running_loop()
@@ -611,21 +800,13 @@ class VideoDirectorAgent(AgentInterface):
                 existing = self._list_versions(sid, seg_id)
                 if existing: continue
                 prompt = self._assemble_prompt(seg, style_prompt, character_art)
-                reference_image_paths = None
-                if video_generation_mode == "text":
-                    img_path = None
-                elif video_generation_mode == "reference":
-                    img_path = None
-                    reference_image_paths = self._get_segment_reference_assets(seg, character_art)
-                    if not reference_image_paths:
-                        logger.warning("VideoDirectorAgent: %s 参考图模式未匹配到第二阶段人物/场景图", seg_id)
-                else:
-                    img_path = self._get_reference_image(sid, seg_id, scene_map)
-                duration = 15 if controlled_episode else 6 if pilot_mode else seg.get("total_duration", 10)
-                last_img_path = self._get_next_reference_image(sid, seg_index, segments, scene_map)
-                if video_generation_mode == "start_end_frame" and not last_img_path:
+                request = self._clip_request(sid, segments, seg_index, seg, scene_map, character_art, video_generation_mode, video_model, video_resolution)
+                if video_generation_mode == "reference" and not request["reference_image_paths"]:
+                    logger.warning("VideoDirectorAgent: %s 参考图模式未匹配到第二阶段人物/场景图", seg_id)
+                if video_generation_mode == "start_end_frame" and not request["last_img_path"]:
                     logger.warning("VideoDirectorAgent: %s 首尾帧模式缺少尾帧，回退为首帧生视频入参", seg_id)
-                tasks.append((seg_id, prompt, img_path, duration, last_img_path, reference_image_paths))
+                duration = 15 if controlled_episode else 6 if pilot_mode else seg.get("total_duration", 10)
+                tasks.append((seg_id, prompt, request, duration))
             if cost_controlled:
                 tasks = tasks[:segment_limit]
             if not tasks:
@@ -634,7 +815,7 @@ class VideoDirectorAgent(AgentInterface):
             done = 0
             with ThreadPoolExecutor(max_workers=concurrency) as executor:
                 futs = {}
-                for seg_id, prompt, img_path, dur, last_img_path, reference_image_paths in tasks:
+                for seg_id, prompt, request, dur in tasks:
                     # 提交前立即发送正在运行的状态，让前端 UI 更新
                     self._report_progress("视频生成", f"启动生成: {seg_id}", 5, data={
                         "asset_complete": {
@@ -644,9 +825,9 @@ class VideoDirectorAgent(AgentInterface):
                     })
                     fut = executor.submit(
                         self._generate_one, sid, seg_id, prompt,
-                        img_path, video_model, dur,
-                        video_sound, video_shot_type, video_ratio, video_resolution,
-                        video_generation_mode, last_img_path, reference_image_paths
+                        request["img_path"], video_model, dur,
+                        video_sound, video_shot_type, video_ratio, request["resolution"],
+                        video_generation_mode, request["last_img_path"], request["reference_image_paths"], request["previous"]
                     )
                     futs[fut] = seg_id
                 for fut in as_completed(futs):
@@ -663,22 +844,11 @@ class VideoDirectorAgent(AgentInterface):
                     pct = 5 + int(90 * done / max(1, len(tasks)))
                     if res_path:
                         versions = self._list_versions(sid, sid_done)
-                        self._report_progress("视频生成", f"完成: {sid_done}", pct, data={
-                            "asset_complete": {
-                                "type": "clips", "id": sid_done,
-                                "status": "done",
-                                "selected": res_path,
-                                "versions": versions,
-                            }
-                        })
+                        self._report_progress("视频生成", f"完成: {sid_done}", pct,
+                                              data=self._done_progress(sid_done, res_path, versions))
                     else:
-                        self._report_progress("视频生成", f"失败: {sid_done}", pct, data={
-                            "asset_complete": {
-                                "type": "clips", "id": sid_done,
-                                "status": "failed",
-                                "selected": "", "versions": [],
-                            }
-                        })
+                        self._report_progress("视频生成", self._failed_step(sid_done), pct,
+                                              data=self._failed_progress(sid_done))
                     if self.cancellation_check and self.cancellation_check():
                         for f in futs:
                             if not f.done(): f.cancel()

@@ -8,6 +8,7 @@ import pytest
 from core.ip_library import LibraryError
 from core.novel_adaptation import NovelAdaptation
 from core.novel_contracts import Action
+from core.novel_contracts import Outline, validate_outline
 from core.novel_planning import OutlineDraft, event_catalog, expand_outline
 from core.novel_output import validate_response
 from core.output_validation import ModelOutputError
@@ -16,7 +17,8 @@ from tests.test_novel_adaptation import make_service, run, confirm, request_for,
 
 BIBLE = {'summary':'灯塔故事', 'characters':[PERSON], 'relationships':[], 'open_threads':[]}
 EVENTS = [{'id':f'ch-{i}-p1-e1', 'chapter_title':f'第{i}章', 'description':f'事件{i}', 'quote':'原文证据', 'start':i} for i in range(1,230)]
-DRAFT = {'episodes':[{'number':1,'title':'来信','summary':'收到来信后推开灯塔门。','characters':['林舟'],
+DRAFT = {'episodes':[{'number':1,'title':'来信','summary':'收到来信后推开灯塔门。',
+    'complete_event':'收到来信并进门','hook':'信是谁寄来的','characters':['林舟'],
     'event_ids':['E0001','E0002'], 'creative_additions':''}],
     'omitted_event_reason':'本轮 60 秒聚焦来信与开门，后续调查事件暂不纳入。',
     'omissions':[{'event_id':'E0003','reason':'重复交代来信动机，合并到开场。'}]}
@@ -56,6 +58,36 @@ def test_large_source_catalog_preserves_every_event_and_model_omission_reason():
 ])
 def test_compact_contract_does_not_hide_invalid_output(corrupt):
     with pytest.raises(ModelOutputError):parse(corrupt(copy.deepcopy(DRAFT)))
+
+
+def test_older_outline_without_hook_fields_can_still_be_reconfirmed():
+    events = EVENTS[:2]
+    episode = {'number':1,'title':'来信','summary':'收到来信后推开灯塔门。','characters':['林舟'],
+               'event_ids':[events[0]['id']],'creative_additions':''}
+    value = {'episodes':[episode],'omissions':[{'event_id':events[1]['id'],'reason':'下一轮再拍'}]}
+    assert validate_outline(value, BIBLE, events, 1)['episodes'][0]['title']=='来信'
+    stored = Outline.model_validate(value).model_dump(exclude_unset=True)
+    assert 'complete_event' not in stored['episodes'][0] and 'hook' not in stored['episodes'][0]
+
+
+def test_new_outline_needs_one_finished_event_an_opening_hook_and_no_repeated_source():
+    events = EVENTS[:2]
+    first = {**DRAFT['episodes'][0], 'event_ids':['E0001']}
+    second = {**first, 'number':2, 'title':'进门', 'complete_event':'推开塔门', 'hook':'', 'event_ids':['E0001']}
+    reused = {'episodes':[first, second], 'omitted_event_reason':'没有其他事件。', 'omissions':[]}
+    with pytest.raises(ModelOutputError) as caught:
+        expand_outline(OutlineDraft.model_validate(reused).model_dump(), BIBLE, events, 2)
+    assert caught.value.diagnostic=='event_reused_across_episodes'
+    repeated = {'episodes':[{**first,'complete_event':'同一件事'}, {**second,'event_ids':['E0002'],'complete_event':'同一件事'}],
+                'omitted_event_reason':'没有其他事件。','omissions':[]}
+    with pytest.raises(ModelOutputError) as caught:
+        expand_outline(OutlineDraft.model_validate(repeated).model_dump(), BIBLE, events, 2)
+    assert caught.value.diagnostic=='repeated_episode_event'
+    blank = copy.deepcopy(DRAFT)
+    blank['episodes'][0]['hook'] = ''
+    with pytest.raises(ModelOutputError) as caught:
+        parse(blank)
+    assert caught.value.diagnostic=='missing_opening_hook'
 
 
 @pytest.fixture
@@ -139,6 +171,9 @@ def test_outline_prompt_expresses_exact_count_and_has_all_short_ids():
     assert len(schema['$defs']['EpisodeOutline']['properties']['event_ids']['items']['enum'])==229
     assert schema['$defs']['EpisodeOutline']['properties']['event_ids']['maxItems']==8
     assert schema['$defs']['EpisodeOutline']['properties']['characters']['maxItems']==4
+    assert schema['$defs']['EpisodeOutline']['properties']['complete_event']['minLength']==2
+    assert 'complete_event' in schema['$defs']['EpisodeOutline']['required']
+    assert 'hook' in schema['$defs']['EpisodeOutline']['required']
 
 
 async def test_lower_repair_budget_is_enforced_and_changes_admission(service_fixture,monkeypatch):

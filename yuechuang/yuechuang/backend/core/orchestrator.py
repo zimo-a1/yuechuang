@@ -30,6 +30,7 @@ from core.output_validation import ModelOutputError, validate_episodes, ScriptMe
 from core.script_interventions import require_ip_script_access
 from pydantic import ValidationError
 from core.shot_control import ShotPlanError, validate_shot_control
+from core import scene_merge
 from models.video_tudou import VideoInputError
 from core.quota import QuotaExceeded
 from core.state_store import StateStore
@@ -1590,6 +1591,9 @@ class WorkflowEngine:
             current.update(body)
         else:
             state.artifacts[stage] = body
+        if stage in ("storyboard", "video_generation"):
+            # Edited segment durations must be reflected in the episode estimate.
+            scene_merge.refresh_duration_summary(state.artifacts.get("storyboard"))
 
     def upload_artifact_image(
         self,

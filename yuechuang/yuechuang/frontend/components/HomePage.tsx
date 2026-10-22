@@ -2,7 +2,7 @@
 
 import { errorMessage, type ProjectMeta, type SessionSummary } from '@/lib/workflowTypes';
 
-import React, { useState, useRef, useEffect, useId } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Settings2, ArrowRight, Check, Trash2, Loader2, Upload, Lightbulb, FileText, X, Sparkles } from 'lucide-react';
 import Image from 'next/image';
@@ -79,76 +79,11 @@ const INSPIRATION_IMAGES = [
 ];
 
 const STYLE_PRESETS = [
-  {id:'realistic',label:'写实短剧',note:'真实人物 · 电影质感',image:'/ui/inspiration-detective.png',sample:'风格示例'},
-  {id:'anime',label:'动漫故事',note:'清晰线稿 · 平涂叙事',image:'',sample:'概念插画'},
-  {id:'3d-animation',label:'3D 动画',note:'立体角色 · 柔和光影',image:'',sample:'概念插画'},
-  {id:'chinese-ink',label:'国风水墨',note:'东方意境 · 山水之间',image:'/ui/inspiration-ink.png',sample:'风格示例'},
+  {id:'realistic',label:'写实短剧',note:'电影光 · 真人质感',image:'/ui/style-realistic.jpg'},
+  {id:'anime',label:'动漫故事',note:'平涂线稿 · 黄昏天际',image:'/ui/style-anime.jpg'},
+  {id:'3d-animation',label:'3D 动画',note:'圆润造型 · 柔和光',image:'/ui/style-3d.jpg'},
+  {id:'chinese-ink',label:'国风水墨',note:'留白 · 淡墨山水',image:'/ui/style-ink.jpg'},
 ];
-
-/** Local illustrations communicate a style, not a generated project or promised model output. */
-function StylePreview({preset,priority=false,decorative=false}:{preset:typeof STYLE_PRESETS[number];priority?:boolean;decorative?:boolean}) {
-  const uid=useId().replace(/:/g,'');
-  if(preset.image) return <Image src={preset.image} alt={decorative?'':`${preset.label}风格示例`} fill sizes="(max-width:600px) 50vw,280px" priority={priority}/>;
-  if(preset.id==='anime') return <svg className="yc-home-style-art" viewBox="0 0 600 360" preserveAspectRatio="xMidYMid slice" role="img" aria-label="动漫概念插画：蓝衣少年与月夜山峦" aria-hidden={decorative||undefined}>
-    <defs><linearGradient id={`${uid}-night`} x2="0" y2="1"><stop stopColor="#193459"/><stop offset="1" stopColor="#527ca7"/></linearGradient></defs>
-    <rect width="600" height="360" fill={`url(#${uid}-night)`}/>
-    <circle cx="155" cy="97" r="54" fill="#e5edf3"/>
-    <circle cx="178" cy="74" r="52" fill="#284569"/>
-    <path d="M0 238 92 148 198 258 322 127 450 252 537 153 600 219V360H0Z" fill="#375674"/>
-    <path d="m0 292 134-92 139 111 166-106 161 68v87H0Z" fill="#1f3857"/>
-    <g fill="#e2efff"><circle cx="83" cy="60" r="2"/><circle cx="238" cy="72" r="1.5"/><circle cx="475" cy="70" r="2"/><circle cx="525" cy="117" r="1.5"/><path d="m438 107 3 8 8 3-8 3-3 8-3-8-8-3 8-3Z"/></g>
-    <path d="M216 360v-30q2-56 71-72h67q70 17 87 102Z" fill="#b9d9e9" stroke="#15283e" strokeWidth="5"/>
-    <path d="m273 261-28 67 43-13 22 45h71l-23-99Z" fill="#5d9bd1"/>
-    <path d="m275 258 26-9h42l22 17-22 43-36-6Z" fill="#eed6c5" stroke="#15283e" strokeWidth="4"/>
-    <path d="M266 143q-1-71 66-72 70 4 67 74l-9 66q-11 41-48 64-44-8-67-50Z" fill="#f2ded0" stroke="#15283e" strokeWidth="5"/>
-    <path d="m372 136 23 6-5 69q-11 41-48 64l-22-7q44-19 50-64Z" fill="#d7b7aa"/>
-    <path d="M273 182q-22-13-21-34l-13 8q0-39 21-57l-9-16 27-2q43-45 94-20l13-9-3 21q35 26 23 83l-17-8-4-34-21 24-3-26-30 37-5-29-33 41-9-19Z" fill="#142638" stroke="#112235" strokeWidth="5" strokeLinejoin="round"/>
-    <path d="m269 111 33-26 49-6-40 21-28 32Zm73-9 19-20 11 10-25 27Z" fill="#304c64"/>
-    <path d="m284 174 28-6m32-5 25-2" stroke="#263e51" strokeWidth="5" strokeLinecap="round"/>
-    <path d="M282 184q16-11 32 0l-5 18q-17 6-27-5Zm62-3q13-12 27-3l-2 18q-14 8-25-1Z" fill="#fff" stroke="#20394f" strokeWidth="3"/>
-    <g fill="#447498"><ellipse cx="301" cy="190" rx="7" ry="12"/><ellipse cx="357" cy="186" rx="7" ry="12"/></g>
-    <g fill="#122536"><ellipse cx="302" cy="191" rx="3" ry="8"/><ellipse cx="358" cy="187" rx="3" ry="8"/></g>
-    <g fill="#fff"><circle cx="298" cy="183" r="3"/><circle cx="354" cy="179" r="3"/></g>
-    <path d="m329 190-4 26 8 1m-18 18q12 5 23-2" fill="none" stroke="#9c746d" strokeWidth="3" strokeLinecap="round"/>
-    <path d="m282 281 29 34-19 31-26-22m98-46-21 30 23 36 20-26" fill="#80b4dc" stroke="#254967" strokeWidth="4"/>
-    <path d="m312 317 8 43m-57-19 12 19" stroke="#e0eff9" strokeWidth="4"/>
-  </svg>;
-  return <svg className="yc-home-style-art" viewBox="0 0 600 360" preserveAspectRatio="xMidYMid slice" role="img" aria-label="3D概念插画：柔和光影中的圆润玩具机器人" aria-hidden={decorative||undefined}>
-    <defs>
-      <radialGradient id={`${uid}-room`} cx=".36" cy=".18" r=".9"><stop stopColor="#8db8df"/><stop offset=".5" stopColor="#4b749d"/><stop offset="1" stopColor="#20394f"/></radialGradient>
-      <radialGradient id={`${uid}-shell`} cx=".28" cy=".12" r=".85"><stop stopColor="#fff"/><stop offset=".5" stopColor="#d5e5f1"/><stop offset=".85" stopColor="#8faec5"/><stop offset="1" stopColor="#526f89"/></radialGradient>
-      <radialGradient id={`${uid}-blue`} cx=".3" cy=".2" r=".9"><stop stopColor="#94cefa"/><stop offset=".42" stopColor="#4f99d8"/><stop offset="1" stopColor="#214777"/></radialGradient>
-      <linearGradient id={`${uid}-glass`} x2=".5" y2="1"><stop stopColor="#2d4d68"/><stop offset=".5" stopColor="#162d43"/><stop offset="1" stopColor="#0c1d32"/></linearGradient>
-      <radialGradient id={`${uid}-shadow`}><stop stopColor="#12283ee0"/><stop offset="1" stopColor="#12283e00"/></radialGradient>
-    </defs>
-    <rect width="600" height="360" fill={`url(#${uid}-room)`}/>
-    <path d="M0 290q301-97 600 0v70H0Z" fill="#7f9dbd" opacity=".3"/>
-    <ellipse cx="320" cy="317" rx="140" ry="29" fill={`url(#${uid}-shadow)`}/>
-    <ellipse cx="320" cy="303" rx="112" ry="30" fill="#597992"/>
-    <ellipse cx="320" cy="294" rx="112" ry="28" fill="#a6bfce"/>
-    <g fill={`url(#${uid}-shell)`}>
-      <rect x="270" y="204" width="94" height="83" rx="35"/>
-      <rect x="273" y="264" width="34" height="32" rx="14"/>
-      <rect x="332" y="264" width="34" height="32" rx="14"/>
-      <rect x="236" y="208" width="28" height="62" rx="14" transform="rotate(22 250 239)"/>
-      <rect x="369" y="207" width="28" height="62" rx="14" transform="rotate(-22 383 238)"/>
-    </g>
-    <rect x="296" y="232" width="40" height="20" rx="10" fill={`url(#${uid}-blue)`}/>
-    <path d="M315 93V77" stroke="#d2e5f2" strokeWidth="8" strokeLinecap="round"/>
-    <circle cx="315" cy="70" r="12" fill={`url(#${uid}-blue)`}/>
-    <g fill={`url(#${uid}-blue)`}><ellipse cx="240" cy="156" rx="19" ry="32"/><ellipse cx="397" cy="156" rx="19" ry="32"/></g>
-    <rect x="244" y="98" width="148" height="122" rx="49" fill={`url(#${uid}-shell)`}/>
-    <rect x="260" y="125" width="117" height="69" rx="27" fill={`url(#${uid}-glass)`} stroke="#b8d7e8" strokeWidth="2"/>
-    <path d="M274 138q33-9 75-3" fill="none" stroke="#d4efff" strokeWidth="4" strokeLinecap="round" opacity=".16"/>
-    <g fill="#a1dcfb"><rect x="282" y="149" width="14" height="21" rx="7"/><rect x="342" y="149" width="14" height="21" rx="7"/></g>
-    <path d="M309 176q10 6 20 0" fill="none" stroke="#a1dcfb" strokeWidth="3" strokeLinecap="round"/>
-    <ellipse cx="278" cy="111" rx="19" ry="5" fill="#fff" opacity=".65" transform="rotate(-12 278 111)"/>
-    <circle cx="153" cy="198" r="25" fill={`url(#${uid}-blue)`}/>
-    <circle cx="455" cy="115" r="19" fill={`url(#${uid}-shell)`}/>
-    <circle cx="457" cy="267" r="12" fill={`url(#${uid}-blue)`}/>
-    <path d="M157 253q-47-85 13-144m267 110q36-8 39-56" fill="none" stroke="#d0e7fa" strokeWidth="2" strokeDasharray="3 8" opacity=".4"/>
-  </svg>;
-}
 
 export default function HomePage({ onStartProject, onDeleteSession, history }: HomePageProps) {
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -416,15 +351,10 @@ export default function HomePage({ onStartProject, onDeleteSession, history }: H
 
   const selectModel=(label:string,value:string,onChange:(value:string)=>void,groups:ProviderGroup[]) => <label>{label}<select value={value} onChange={event=>onChange(event.target.value)}>{missingModelOption(value,groups)}{groups.map(group=><optgroup key={group.provider} label={group.label}>{group.models.map(model=><option key={model.id} value={model.id}>{modelDisplayName(model.id,model.label)}</option>)}</optgroup>)}</select></label>;
   return <div className="yc-home-experience">
+    <div className="yc-home-glow" aria-hidden="true"><span/><span/><span/></div>
     <div className="yc-home-content">
-      <section className="yc-home-hero" aria-labelledby="home-heading">
-        <div className="yc-home-hero-copy"><span className="yc-home-eyebrow"><Sparkles size={14}/> 悦创 · 创作工作空间</span><h1 id="home-heading">从一个想法，<br/>到一部<span>短片</span>。</h1><p>写下故事，选择风格。<br/>从剧本到成片，让创意一步步成为画面。</p><a href="#home-composer" className="yc-home-hero-link" onClick={()=>promptRef.current?.focus()}>开始你的故事<ArrowRight size={16}/></a></div>
-        <div className="yc-home-gallery" aria-label="风格示例画廊">{[STYLE_PRESETS[3],STYLE_PRESETS[0],STYLE_PRESETS[1]].map((item,index)=><div className={`yc-home-gallery-card gallery-${index}`} key={item.id}><StylePreview preset={item} priority={index===1}/><span>{item.label}<small>{item.sample}</small></span></div>)}</div>
-        <button className="yc-home-settings-link" aria-expanded={showSettings} aria-controls="home-creation-settings" onClick={()=>{setShowSettings(value=>!value);if(!showSettings)requestAnimationFrame(()=>document.getElementById('home-creation-settings')?.scrollIntoView({behavior:'smooth',block:'nearest'}));}}><Settings2 size={14}/>创作设置<ArrowRight size={14}/></button>
-      </section>
-      <section className="yc-home-create" aria-labelledby="create-heading">
-        <div className="yc-home-section-head"><div><h2 id="create-heading">把灵感写下来</h2><p>先选一个画面方向，之后还可以调整。</p></div><span>01 / 创意开始</span></div>
-        <div className="yc-home-style-grid" aria-label="创作风格">{STYLE_PRESETS.map(item=><button key={item.id} type="button" aria-pressed={selectedStyle===item.id} className="yc-home-style-card" onClick={()=>{setSelectedStyle(item.id);promptRef.current?.focus();}}><span className="yc-home-style-image"><StylePreview preset={item} decorative/><small>{item.sample}</small>{selectedStyle===item.id&&<i><Check size={14}/></i>}</span><span className="yc-home-style-copy"><b>{item.label}</b><small>{item.note}</small></span></button>)}</div>
+      <section className="yc-home-create" aria-labelledby="home-heading">
+        <div className="yc-home-stage"><div><h1 id="home-heading">写下这一集</h1><p>故事和画面方向一起存进项目。创建本身不生成画面。</p></div><button className="yc-home-settings-link" aria-expanded={showSettings} aria-controls="home-creation-settings" onClick={()=>{setShowSettings(value=>!value);if(!showSettings)requestAnimationFrame(()=>document.getElementById('home-creation-settings')?.scrollIntoView({behavior:'smooth',block:'nearest'}));}}><Settings2 size={14}/>创作设置</button></div>
         <div className="yc-home-composer" id="home-composer">
           <label className="yc-visually-hidden" htmlFor="home-idea">创作想法</label><textarea ref={promptRef} id="home-idea" value={idea} onChange={event=>{setIdea(event.target.value);setCreateError('');}} placeholder="一个人物、一处场景，或一次意想不到的转折……" maxLength={20000} rows={3} onKeyDown={event=>{if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)&&!event.nativeEvent.isComposing){event.preventDefault();void handleStart();}}}/>
           {uploadedFile&&<div className="yc-home-uploaded"><FileText size={15}/><span title={uploadedFile.name}>{uploadedFile.name}</span><button aria-label="移除已导入文档" title="移除已导入文档" onClick={()=>setUploadedFile(null)}><X size={14}/></button></div>}
@@ -434,6 +364,7 @@ export default function HomePage({ onStartProject, onDeleteSession, history }: H
           {createError&&<p role="alert" className="yc-home-inline-error">{createError}</p>}
           {configError&&<p role="alert" className="yc-home-inline-error">{configError} <Link href="/settings">查看服务设置 →</Link></p>}
         </div>
+        <div className="yc-home-style-grid" aria-label="创作风格">{STYLE_PRESETS.map(item=><button key={item.id} type="button" aria-pressed={selectedStyle===item.id} className="yc-home-style-card" onClick={()=>{setSelectedStyle(item.id);promptRef.current?.focus();}}><span className="yc-home-style-image"><Image src={item.image} alt="" fill sizes="(max-width:700px) 50vw, 280px"/>{selectedStyle===item.id&&<i><Check size={14}/></i>}</span><span className="yc-home-style-copy"><b>{item.label}</b><small>{item.note}</small></span></button>)}</div>
         {showSettings&&<section className="yc-home-settings" id="home-creation-settings" aria-label="创作设置"><header><div><h3>创作设置</h3><p>这些选项会随创意保存到项目，可在后续制作中调整。</p></div><button aria-label="收起创作设置" onClick={()=>setShowSettings(false)}><X size={18}/></button></header><div className="yc-home-settings-grid">
           <label>视觉风格<select value={selectedStyle} onChange={event=>setSelectedStyle(event.target.value)}>{STYLES.map(style=><option key={style.id} value={style.id}>{style.label.split(' / ').at(-1)}</option>)}</select></label>
           <label>画面比例<select value={selectedRatio} onChange={event=>setSelectedRatio(event.target.value)}>{VIDEO_RATIOS.map(ratio=><option key={ratio.id} value={ratio.id} disabled={!!supportedRatios&&!supportedRatios.includes(ratio.id)}>{ratio.label}{supportedRatios&&!supportedRatios.includes(ratio.id)?' · 当前模型不支持':''}</option>)}</select></label>

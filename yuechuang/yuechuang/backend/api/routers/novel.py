@@ -43,7 +43,9 @@ def direction(project_id: str, body: DirectionSave):
 
 @router.put('/outline', response_model=NovelDetail)
 def outline(project_id: str, body: OutlineSave):
-    return get_novel().review(project_id, 'outline', body.value.model_dump(), body.expected_revision, body.confirm)
+    # Omitted episode fields stay omitted, so an older outline can be reconfirmed
+    # without the newer hook fields. A client that sends them is checked.
+    return get_novel().review(project_id, 'outline', body.value.model_dump(exclude_unset=True), body.expected_revision, body.confirm)
 
 
 @router.post('/episodes/{number}/publish', response_model=PublishedEpisode)

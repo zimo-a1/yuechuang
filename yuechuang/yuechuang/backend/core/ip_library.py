@@ -113,7 +113,7 @@ class IPLibrary:
             # List uses newest first, so insert in reverse source order.
             for record in sorted(records, key=lambda r: r['catalog']['position'], reverse=True):
                 catalog = record['catalog']
-                ip_id = uuid.uuid5(uuid.NAMESPACE_URL, f"catalog-ip:{catalog['source_id']}").hex
+                ip_id = uuid.uuid5(uuid.NAMESPACE_URL, f"cmread-ip:{catalog['source_id']}").hex
                 if db.execute('SELECT 1 FROM items WHERE id=?', (ip_id,)).fetchone():
                     continue
                 item = {k:record.get(k, '') for k in ('title', 'author', 'genre', 'synopsis')}

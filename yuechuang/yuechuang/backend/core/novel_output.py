@@ -23,6 +23,20 @@ class NovelOutputError(ModelOutputError):
             self.message = '模型生成的场景总时长与本集目标不一致；本次剧本未采用，已确认大纲保留。'
         elif diagnostic in {'outline_event_capacity', 'outline_character_capacity'}:
             self.message = '本集选用的事件或出场人物过多，超出当前时长的生成范围；本次建议未采用，已完成结果保留。'
+        elif diagnostic == 'event_reused_across_episodes':
+            self.message = '同一条原著事件被放进了不止一集；本次大纲未采用，已确认方向保留。'
+        elif diagnostic == 'incomplete_episode_event':
+            self.message = '有一集没有写清本集内做完的一件事；本次大纲未采用，已确认方向保留。'
+        elif diagnostic == 'repeated_episode_event':
+            self.message = '有两集写了同一件要完成的事；本次大纲未采用，已确认方向保留。'
+        elif diagnostic == 'missing_opening_hook':
+            self.message = '第 1 集缺少开场钩子；本次大纲未采用，已确认方向保留。'
+        elif diagnostic == 'scene_without_action':
+            self.message = '有一场没有可拍的动作；本次剧本未采用，已确认大纲保留。'
+        elif diagnostic == 'line_too_long':
+            self.message = '有一句对白超过 35 字，一口说不完；本次剧本未采用，已确认大纲保留。'
+        elif diagnostic == 'dialogue_too_long':
+            self.message = '对白按语速算下来超过本集时长；本次剧本未采用，已确认大纲保留。'
         elif diagnostic in {'unknown_speaker', 'unknown_scene_character'}:
             self.message = '剧本出现了无法对应到已确认大纲的人物或说话人；本次剧本未采用，已确认大纲保留。'
         elif diagnostic == 'unmarked_new_dialogue':

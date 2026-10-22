@@ -12,6 +12,7 @@ import StudioModelControls from './StudioModelControls';
 import StudioAssets from './StudioAssets';
 import StudioScriptEditor from './StudioScriptEditor';
 import {STUDIO_STEPS, stepForStage, stageForStep, type StudioStep} from '@/lib/studio';
+import {confirmationFollowUp, projectHref} from '@/lib/projects';
 import { canLeaveEditor } from '@/lib/unsavedChanges';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -141,6 +142,18 @@ function mergeAssetUpdateItem(item: AssetItem, assetUpdate: Partial<AssetItem>):
     versions: assetUpdate.versions
       ? mergeAssetVersions(item.versions, assetUpdate.versions)
       : item.versions,
+    ...carriedAssetFields(assetUpdate, nextStatus),
+  };
+}
+
+function carriedAssetFields(assetUpdate: Partial<AssetItem>, nextStatus: AssetItem['status']): Partial<AssetItem> {
+  const incomingError = assetUpdate.generation_error || assetUpdate.error;
+  const succeeded = nextStatus === 'done' && !incomingError;
+  return {
+    ...(assetUpdate.review ? {review: assetUpdate.review} : {}),
+    ...(incomingError ? {generation_error: incomingError} : {}),
+    ...(succeeded ? {generation_error: undefined, skipped: undefined} : {}),
+    ...(assetUpdate.skipped ? {skipped: true} : {}),
   };
 }
 
@@ -430,7 +443,7 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
     try {
       const response = await executeStage(sid, stageId, inputData, controller.signal);
       toast.info('生成任务已提交，可在任务中心查看');
-      router.replace(sessionOverride ? `/studio/${sid}?stage=${stageId}&step=${stepForStage(stageId)}` : `/?session=${sid}&stage=${stageId}`);
+      router.replace(projectHref(sid, stageId));
 
       for await (const event of parseStreamEvents(response)) {
         if (event.type === 'progress') {
@@ -609,107 +622,11 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
       toast.success('当前环节已确认');
       setConfirmedStages(result.confirmed_stages || []);
       updateStageState(stageId, { status: 'completed', progressMessage: '已确认' });
-      if (sessionOverride || projectParams?.source_type === 'original') {
-        setGlobalStatusMap(result.status_map || {});
-        if (result.next_stage) {
-          setActiveStage(result.next_stage);
-          router.push(sessionOverride ? `/studio/${sessionId}?stage=${result.next_stage}&step=${stepForStage(result.next_stage)}` : `/?session=${sessionId}&stage=${result.next_stage}`);
-        }
-        return;
-      }
-
-
-      // 更新顶栏状态
-      if (result.status_map) {
-        setGlobalStatusMap(result.status_map);
-      }
-      if (result.next_stage) {
-      }
-
-      if (result.next_stage) {
-        const idx = STAGE_ORDER.indexOf(stageId);
-
-        // 构建完整的 inputData
-        const inputData: Record<string, unknown> = {
-          session_id: sessionId,
-          style: projectParams?.style,
-          llm_model: projectParams?.llm_model,
-          vlm_model: projectParams?.vlm_model,
-          image_t2i_model: projectParams?.image_t2i_model,
-          image_it2i_model: projectParams?.image_it2i_model,
-          video_generation_mode: projectParams?.video_generation_mode,
-          video_first_frame_model: projectParams?.video_first_frame_model,
-          video_start_end_model: projectParams?.video_start_end_model,
-          video_reference_model: projectParams?.video_reference_model,
-          video_model: projectParams?.video_model,
-          video_ratio: projectParams?.video_ratio,
-          video_resolution: projectParams?.video_resolution,
-          video_sound: 'on',
-          video_shot_type: 'multi',
-        };
-        // 从剧本产物获取实际场景数
-        try {
-          const scriptArt = await getArtifact(sessionId, 'script_generation');
-          if (scriptArt?.artifact?.scenes?.length) {
-            inputData.scene_number = scriptArt.artifact.scenes.length;
-          }
-        } catch { /* ignore */ }
-
-        // 从参考图产物获取用户选择的图片版本，传递给视频生成阶段
-        if (stageId === 'reference_generation') {
-          const refArt = stageStates['reference_generation']?.artifact;
-          if (refArt?.scenes) {
-            const selectedImages: Record<string, string> = {};
-            refArt.scenes.forEach((s) => {
-              if (s.id && s.selected) {
-                selectedImages[s.id] = s.selected;
-              }
-            });
-            inputData.selected_images = selectedImages;
-          }
-        }
-
-        // 从视频产物获取用户选择的视频版本，传递给后期制作阶段
-        if (stageId === 'video_generation') {
-          const vidArt = stageStates['video_generation']?.artifact;
-          if (vidArt?.clips) {
-            const selectedClips: Record<string, string> = {};
-            vidArt.clips.forEach((c) => {
-              if (c.id && c.selected) {
-                selectedClips[c.id] = c.selected;
-              }
-            });
-            inputData.selected_clips = selectedClips;
-          }
-        }
-
-        for (let i = idx + 1; i < STAGE_ORDER.length; i++) {
-          if (stoppedRef.current) break;
-          const nextStage = STAGE_ORDER[i];
-          await runStage(sessionId, nextStage, inputData);
-
-          const status = await getProjectStatus(sessionId);
-          setGlobalStatusMap(status.status || {});
-        setConfirmedStages(status.confirmed_stages || []);
-          const nStageStatus = status?.status?.[nextStage];
-          // waiting: 等待用户介入（如选择角色/图片），不能自动 continue
-          // completed: 阶段完成，等待确认进入下一阶段，可以自动 continue
-          if (nStageStatus === 'completed' || nStageStatus === 'session_completed') {
-            if (autoModeRef.current) {
-              await continueWorkflow(sessionId);
-              updateStageState(nextStage, { status: 'completed', progressMessage: '已自动确认' });
-            } else {
-              updateStageState(nextStage, { status: 'completed' });
-              setActiveStage(nextStage);
-              break;
-            }
-          } else if (nStageStatus === 'waiting') {
-            // 用户需要介入，停止自动执行
-            updateStageState(nextStage, { status: 'waiting' });
-            setActiveStage(nextStage);
-            break;
-          }
-        }
+      if (result.status_map) setGlobalStatusMap(result.status_map);
+      const follow = confirmationFollowUp(result.next_stage, sessionId);
+      if (follow.href && result.next_stage) {
+        setActiveStage(result.next_stage);
+        router.push(follow.href);
       }
     } catch (error) {
       updateStageState(stageId, { error: error instanceof Error ? error.message : '确认失败，请重试' });
@@ -1130,7 +1047,12 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
   useEffect(() => {
     let cancelled = false;
     const polls = pollRef.current;
-    const sessionParam = (sessionOverride || searchParams.get('session'));
+    const legacySession = !sessionOverride ? searchParams.get('session') : null;
+    if (legacySession) {
+      router.replace(projectHref(legacySession, searchParams.get('stage') || undefined));
+      return;
+    }
+    const sessionParam = sessionOverride;
     const stepParam = searchParams.get('step') as StudioStep;
     const stageParam = searchParams.get('stage') || (STUDIO_STEPS.some(item=>item.id===stepParam) ? stageForStep(stepParam, []) : null);
     if (sessionParam) {
@@ -1144,7 +1066,7 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
         .catch(() => { if (!cancelled) setLoadError('项目不存在或暂时无法读取，请返回项目中心或重试。'); });
     }
     return () => { cancelled = true; polls.clear(); };
-  }, [searchParams, loadProject, loadRetry, sessionOverride]);
+  }, [searchParams, loadProject, loadRetry, sessionOverride, router]);
 
   // ── 返回首页 ──
   // 处理阶段点击，更新 URL
@@ -1152,7 +1074,7 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
     if (!canLeaveEditor()) return;
     setActiveStage(stage);
     if (sessionId) {
-      router.push(sessionOverride ? `/studio/${sessionId}?stage=${stage}&step=${stepForStage(stage)}` : `/?session=${sessionId}&stage=${stage}`);
+      router.push(projectHref(sessionId, stage));
     }
   };
 
@@ -1312,6 +1234,7 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
         hasNextStageStarted={hasNextStageStarted}
         referenceArtifact={referenceArtifact || undefined}
         scriptArtifact={scriptArtifact || undefined}
+        projectMeta={projectParams || undefined}
         artifacts={Object.keys(stageStates).reduce<Record<string, WorkflowArtifact>>((acc, key) => {
           acc[key] = stageStates[key].artifact || {};
           return acc;
@@ -1362,13 +1285,13 @@ export default function WorkflowPanel({sessionOverride}: {sessionOverride?:strin
     return <ProjectStudio id={sessionId} meta={projectParams} step={step} stage={activeStage||'script_generation'}
       confirmed={confirmedStages} busy={effectiveIsRunning} onStep={goStep} onStage={handleStageClick}
       onRefresh={()=>{if(canLeaveEditor())void refreshSnapshot(sessionId).then(()=>toast.success('本集数据已刷新')).catch(e=>toast.error(errorMessage(e,'刷新失败，请重试')));}}
-      controls={modelConfig&&<StudioModelControls config={modelConfig} disabled={effectiveIsRunning} onChange={async config=>{await updateModels(sessionId,{...config});await refreshSnapshot(sessionId);}}/>}>
+        controls={modelConfig&&<StudioModelControls config={modelConfig} disabled={effectiveIsRunning} duration={{sessionId,value:projectParams.target_duration||60,revision:projectParams.project_revision||0,hasStoryboard:Boolean(stageStates.storyboard.artifact?.episodes?.length),onSaved:meta=>setProjectParams(prev=>prev?{...prev,...meta}:prev)}} onChange={async config=>{await updateModels(sessionId,{...config});await refreshSnapshot(sessionId);}}/>}>
       {structuredScript&&step==='rewrite'&&<button className="yc-structured-back" onClick={()=>{if(canLeaveEditor())setStructuredScript(false);}}>← 返回改写正文</button>}{content}
     </ProjectStudio>;
   }
 
   return (
-    <div className="flex h-screen w-full min-w-0 flex-col bg-gray-50/50">
+    <div className="yc-workspace-root flex h-screen w-full min-w-0 flex-col bg-gray-50/50">
       <TopBar
         activeStage={activeStage}
         stageStatuses={stageStatuses}

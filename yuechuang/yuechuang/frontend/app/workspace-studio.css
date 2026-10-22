@@ -345,8 +345,11 @@
 .hb-studio .hb-preview-references .yc-bound-assets>button { gap: 3px;font-size: 9.5px; }
 .hb-studio .hb-duration-card { display: grid;grid-template-columns: 1fr auto;gap: 6px;align-items: center;padding: 7px 10px;border: 1px solid rgba(61,139,255,.3);background: var(--hb-accent-soft);border-radius: 14px; }
 .hb-studio .hb-duration-card>span { font-size: 11px; }
-.hb-studio .hb-duration-card>strong { padding: 0 8px;border-radius: 8px;border: 1px solid var(--hb-border-strong);background: var(--hb-panel);font-size: 11px;line-height: 22px;font-weight: 600; }
-.hb-studio .hb-duration-card>strong small { margin-left: 8px;font-size: 10px;color: var(--hb-subtle);font-weight: 400; }
+.hb-studio .hb-duration-card>strong,.hb-studio .hb-duration-card>label { display: inline-flex;align-items: center;gap: 4px;height: 28px;padding: 0 8px;border-radius: 8px;border: 1px solid var(--hb-border-strong);background: var(--hb-panel);font-size: 13px;line-height: 22px;font-weight: 650; }
+.hb-studio .hb-duration-card>strong small,.hb-studio .hb-duration-card>label small { font-size: 11px;color: var(--hb-subtle);font-weight: 500; }
+.hb-studio .hb-duration-card input { width: 42px;height: 22px;margin: 0;padding: 0;border: 0;border-radius: 0;background: transparent;box-shadow: none;color: var(--text-primary);font: inherit;font-weight: 650;text-align: right; }
+.hb-studio .hb-duration-card input:focus { outline: none; }
+.hb-studio .hb-duration-card>label:focus-within { border-color: var(--brand-blue-1,#3d8bff); }
 .hb-studio .yc-shot-generate .hb-duration-card>p { grid-column: 1/-1;background: transparent;border: 0;padding: 0;color: var(--hb-muted);font-size: 10px;text-align: left; }
 @media(max-width:1350px) {
   .hb-studio .yc-model-controls { gap: 6px; }

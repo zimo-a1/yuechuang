@@ -14,6 +14,7 @@ import "./experience-studio.css";
 import "./experience-settings.css";
 import "./experience-ip.css";
 import "./brand.css";
+import "./experience-flow.css";
 
 export const metadata: Metadata = {
   title: "悦创 · YueChuang",
@@ -31,9 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body
-        className="antialiased"
-      >
+      <body className="antialiased" suppressHydrationWarning>
         <AppShell>{children}</AppShell>
       </body>
     </html>

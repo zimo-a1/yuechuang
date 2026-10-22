@@ -1,16 +1,57 @@
 import type { ShotBeat, ShotControl } from './workflowTypes';
 
-export interface StoryboardShot { shot_number: number; shot_type: string; duration: number; content: string }
+export interface StoryboardShot { shot_number: number; shot_type: string; duration: number; content: string; unit_ids?: string[]; dialogue?: unknown }
 export interface StoryboardSegment {
   segment_id: string; segment_number: number; location: string; characters: string[];
   total_duration: number; shots: StoryboardShot[]; shot_control?: ShotControl | null;
+  plan_rule?: string; scene_key?: string; continues_previous?: boolean; speech_seconds?: number;
 }
-export interface StoryboardEpisode { episode_number: number; episode_title?: string; segments: StoryboardSegment[] }
+export interface StoryboardEpisode {
+  episode_number: number; episode_title?: string; segments: StoryboardSegment[];
+  plan_rule?: string; estimated_duration?: number; target_duration?: number; plan_notes?: string[];
+}
 export interface StoryboardIssue { segmentId: string; beatId?: string; message: string }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(x => typeof x === 'string');
 const positiveInt = (value: number) => Number.isInteger(value) && value > 0;
 export const speechSeconds = (text: string) => Math.max(2, Math.ceil(Array.from(text.replace(/\s/g, '')).length / 4));
+
+export function episodeTiming(episode: StoryboardEpisode, fallbackTarget?: number) {
+  const estimated = typeof episode.estimated_duration === 'number'
+    ? episode.estimated_duration
+    : episode.segments.reduce((sum, segment) => sum + (Number(segment.total_duration) || 0), 0);
+  const target = typeof episode.target_duration === 'number' ? episode.target_duration : fallbackTarget;
+  return {
+    estimated, target,
+    over: typeof target === 'number' && estimated > target,
+    text: typeof target === 'number' ? `预计总时长 ${estimated} 秒 / 目标时长 ${target} 秒` : `预计总时长 ${estimated} 秒`,
+  };
+}
+
+export function planNotes(episode: {plan_notes?: unknown}) {
+  return Array.isArray(episode.plan_notes) ? episode.plan_notes.filter((note): note is string => typeof note === 'string' && note.trim() !== '') : [];
+}
+
+/** Cumulative shot ranges for the merged-scene rule. Older segments keep their original duration label. */
+export function shotRanges(segment: {plan_rule?: string; shots: {duration?: number}[]}) {
+  if (segment.plan_rule !== 'scene_merge_v1') return null;
+  let cursor = 0;
+  return segment.shots.map(shot => {
+    const start = cursor;
+    cursor += Number(shot.duration) || 0;
+    return {start, end: cursor};
+  });
+}
+
+export function isMinimaxStartEnd(mode?: string, model?: string) {
+  if (mode !== 'start_end_frame') return false;
+  return (model || '').split('/').filter(Boolean).pop() === 'MiniMax-H3-Max-Turbo';
+}
+
+export function continuationLabel(segment: {continues_previous?: boolean}, mode?: string, model?: string) {
+  if (segment.continues_previous !== true) return '';
+  return isMinimaxStartEnd(mode, model) ? '接上一段画面' : '同场景';
+}
 
 /** Validate shape before rendering raw JSON; preserve all extra/legacy metadata. */
 export function readStoryboard(value: unknown): StoryboardEpisode[] {

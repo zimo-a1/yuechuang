@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readStoryboard, storyboardIssues, nextBeat, speechSeconds, type StoryboardEpisode } from '../lib/storyboard.ts';
+import { continuationLabel, episodeTiming, planNotes, readStoryboard, shotRanges, storyboardIssues, nextBeat, speechSeconds, type StoryboardEpisode } from '../lib/storyboard.ts';
 
 const sample = (): StoryboardEpisode[] => [{episode_number: 1, episode_title: '对白测试', segments: [{
   segment_id: 'one', segment_number: 1, location: '室内', characters: ['青年', '同伴'], total_duration: 6,
@@ -58,4 +58,26 @@ test('new beats have unique ids and never copy spoken text', () => {
 });
 test('speech timing counts Unicode characters consistently with backend', () => {
   assert.equal(speechSeconds('一 二\n三'), 2); assert.equal(speechSeconds('😀'.repeat(9)), 3);
+});
+test('episode timing prefers stored totals and falls back for older episodes', () => {
+  const episode = sample()[0];
+  assert.equal(episodeTiming({...episode, estimated_duration: 28, target_duration: 30}).text, '预计总时长 28 秒 / 目标时长 30 秒');
+  assert.equal(episodeTiming(episode, 60).text, '预计总时长 6 秒 / 目标时长 60 秒');
+  assert.equal(episodeTiming(episode).text, '预计总时长 6 秒');
+  assert.equal(episodeTiming({...episode, estimated_duration: 40, target_duration: 30}).over, true);
+});
+test('merged scenes show cumulative shot ranges and keep extra segment fields', () => {
+  const episode = sample()[0];
+  const segment = {...episode.segments[0], plan_rule: 'scene_merge_v1', scene_key: '1-1', continues_previous: true,
+    shots: [{shot_number: 1, shot_type: '中景', duration: 2, content: 'a'}, {shot_number: 2, shot_type: '近景', duration: 4, content: 'b'},
+      {shot_number: 3, shot_type: '中景', duration: 3, content: 'c'}, {shot_number: 4, shot_type: '特写', duration: 4, content: 'd'}]};
+  assert.deepEqual(shotRanges(segment), [{start: 0, end: 2}, {start: 2, end: 6}, {start: 6, end: 9}, {start: 9, end: 13}]);
+  assert.equal(shotRanges(episode.segments[0]), null);
+  const saved = readStoryboard([{...episode, plan_notes: ['未识别到场次标题'], segments: [segment]}]);
+  assert.equal(saved[0].segments[0].scene_key, '1-1');
+  assert.equal(saved[0].segments[0].continues_previous, true);
+  assert.deepEqual(planNotes(saved[0]), ['未识别到场次标题']);
+  assert.equal(continuationLabel(segment, 'start_end_frame', 'svc/demo/MiniMax-H3-Max-Turbo'), '接上一段画面');
+  assert.equal(continuationLabel(segment, 'first_frame', 'MiniMax-H3-Max-Turbo'), '同场景');
+  assert.equal(continuationLabel(episode.segments[0], 'start_end_frame', 'MiniMax-H3-Max-Turbo'), '');
 });

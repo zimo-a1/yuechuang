@@ -19,6 +19,7 @@ from core.configuration_runtime import ContextThreadPoolExecutor as ThreadPoolEx
 
 from .base_agent import AgentInterface
 from core.service_settings import SettingsError
+from core import image_review
 from prompts.loader import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -350,6 +351,11 @@ class ReferenceGeneratorAgent(AgentInterface):
                                                       character_description=character_description,
                                                       setting_description=setting_description,
                                                       vlm_model=vlm_model)
+                if eval_result.get("review_unavailable"):
+                    # 审核没做成：保留图片、标记“审核未完成”，不因此自动重画，避免额外扣费。
+                    logger.warning(f"[{segment_id}] VLM审核未完成，保留图片待人工检查")
+                    eval_result["final_visual_prompt"] = current_visual_prompt
+                    return segment_id, save_path, eval_result
 
                 score = eval_result.get('score', 0)
                 hard_failures = eval_result.get('hard_failures') or []
@@ -493,48 +499,34 @@ class ReferenceGeneratorAgent(AgentInterface):
                 model=vlm_model
             )
 
-            if result and isinstance(result, list):
-                result_text = result[0] if result else ""
-            elif isinstance(result, str):
-                result_text = result
-            else:
-                result_text = str(result)
-
-            import json
-            try:
-                import re
-                json_match = re.search(r'\{[^{}]*\}', result_text, re.DOTALL)
-                if json_match:
-                    eval_result = json.loads(json_match.group())
-                    return eval_result
-            except:
-                pass
-
-            return {
-                "score": 0,
-                "hard_failures": ["VLM评估解析失败，无法确认硬性标准"],
-                "issues": ["评估解析失败"],
-                "is_acceptable": False,
-            }
+            # 解析失败记为“审核未完成”：不算合格，也不触发自动重画
+            return image_review.parse_review(result)
 
         except Exception as e:
             logger.warning(f'VLM evaluation failed: {type(e).__name__}')
-            return {
-                "score": 0,
-                "hard_failures": ["VLM评估失败，无法确认硬性标准"],
-                "issues": [str(e)],
-                "is_acceptable": False,
-            }
+            return image_review.unavailable(type(e).__name__)
 
     # ─── 构建最终 payload ───
 
-    def _build_payload(self, sid: str, segments: list, session_data: dict = None, prompts_map: dict = None, selected_images: dict = None) -> dict:
+    def _review_progress(self, reviews: dict, segment_id: str, image_path: str, eval_result, data: dict) -> dict:
+        """把审核结果写进进度事件（任务事件可查），审核未完成时附带校验提醒。"""
+        review = image_review.summarize(eval_result, image_path)
+        reviews[segment_id] = review
+        data["asset_complete"]["review"] = review
+        if review["status"] == "unavailable":
+            data["validation_warning"] = image_review.warning("scenes", segment_id)
+        return data
+
+    def _build_payload(self, sid: str, segments: list, session_data: dict = None, prompts_map: dict = None,
+                       selected_images: dict = None, reviews: dict = None) -> dict:
         """构建最终 payload"""
         scenes = []
         if prompts_map is None:
             prompts_map = {}
         if selected_images is None:
             selected_images = {}
+        reviews = reviews or {}
+        previous_scenes = {}
 
         # 建立 scene_id 到 selected 路径的映射
         selected_map = {}
@@ -546,6 +538,7 @@ class ReferenceGeneratorAgent(AgentInterface):
                 if sid_in_json:
                     selected_map[sid_in_json] = scene.get("selected", "")
                     existing_prompts[sid_in_json] = scene.get("visual_prompt", "")
+                    previous_scenes[sid_in_json] = scene
 
         for idx, seg in enumerate(segments, 1):
             segment_id = seg.get('segment_id', f'seg_unk_{idx}')
@@ -566,7 +559,7 @@ class ReferenceGeneratorAgent(AgentInterface):
 
             # 最终 payload 表示阶段已跑完；仍没有图片的片段应标记为 failed，避免覆盖实时失败状态。
             status = "done" if selected_path or versions else "failed"
-            scenes.append({
+            scene = {
                 "id": segment_id,
                 "name": f"第{seg.get('episode_number', 1)}集-片段{seg.get('segment_number', idx)}",
                 "index": idx,
@@ -575,11 +568,18 @@ class ReferenceGeneratorAgent(AgentInterface):
                 "selected": selected_path,
                 "versions": versions,
                 "status": status,
-            })
+            }
+            review = reviews.get(segment_id)
+            if not (review and review.get("image") == selected_path):
+                review = image_review.carried_review(previous_scenes.get(segment_id), selected_path)
+            if review:
+                scene["review"] = review
+            scenes.append(scene)
         return {
             "payload": {
                 "session_id": sid,
                 "scenes": scenes,
+                "validation_warnings": image_review.warnings_for("scenes", scenes),
             },
             "stage_completed": True,
         }
@@ -710,6 +710,7 @@ class ReferenceGeneratorAgent(AgentInterface):
 
                 selected_images = {}
                 prompt_map = {}  # segment_id → first_frame_prompt
+                reviews = {}
 
                 def regen_run():
                     total = len(regen_scenes)
@@ -802,14 +803,15 @@ class ReferenceGeneratorAgent(AgentInterface):
                             if result_path:
                                 selected_images[segment_id_done] = result_path
                                 versions = self._list_versions(sid, segment_id_done)
-                                self._report_progress("参考图", f"完成: {segment_id_done}", pct, data={
+                                self._report_progress("参考图", f"完成: {segment_id_done}", pct,
+                                                      data=self._review_progress(reviews, segment_id_done, result_path, eval_result, {
                                     "asset_complete": {
                                         "type": "scenes", "id": segment_id_done,
                                         "status": "done",
                                         "selected": result_path,
                                         "versions": versions,
                                     }
-                                })
+                                }))
                             else:
                                 self._report_progress("参考图", f"失败: {segment_id_done}", pct, data={
                                     "asset_complete": {
@@ -830,7 +832,7 @@ class ReferenceGeneratorAgent(AgentInterface):
                 await loop.run_in_executor(None, regen_run)
 
                 self._report_progress("参考图", "完成", 100)
-                return self._build_payload(sid, fresh_segments, session_data, prompt_map, selected_images)
+                return self._build_payload(sid, fresh_segments, session_data, prompt_map, selected_images, reviews)
 
         # ═══ 正常流程：全量生成 ═══
         self._report_progress("参考图", "加载分镜数据...", 5)
@@ -841,6 +843,7 @@ class ReferenceGeneratorAgent(AgentInterface):
 
         first_frame_prompts = {}  # 提升作用域，用于最后写回结果文件
         selected_images_map = {}  # 提升作用域，记录本轮新生成且 VLM 挑选出来的图片路径
+        reviews = {}  # segment_id → 审核记录（分数/理由或“审核未完成”）
 
         def run():
             nonlocal first_frame_prompts
@@ -956,14 +959,15 @@ class ReferenceGeneratorAgent(AgentInterface):
                     if result_path:
                         selected_images_map[segment_id_done] = result_path
                         versions = self._list_versions(sid, segment_id_done)
-                        self._report_progress("参考图", f"完成: {segment_id_done}", pct, data={
+                        self._report_progress("参考图", f"完成: {segment_id_done}", pct,
+                                              data=self._review_progress(reviews, segment_id_done, result_path, eval_result, {
                             "asset_complete": {
                                 "type": "scenes", "id": segment_id_done,
                                 "status": "done",
                                 "selected": result_path,
                                 "versions": versions,
                             }
-                        })
+                        }))
                     else:
                         self._report_progress("参考图", f"失败: {segment_id_done}", pct, data={
                             "asset_complete": {
@@ -994,8 +998,8 @@ class ReferenceGeneratorAgent(AgentInterface):
             if "cancel" in str(e).lower():
                 logger.info("ReferenceGeneratorAgent: 用户取消，返回已完成部分结果")
                 self._report_progress("参考图", "已取消（保留已完成图片）", 100)
-                return self._build_payload(sid, segments, session_data, first_frame_prompts, selected_images_map)
+                return self._build_payload(sid, segments, session_data, first_frame_prompts, selected_images_map, reviews)
             raise
 
         self._report_progress("参考图", "完成", 100)
-        return self._build_payload(sid, segments, session_data, first_frame_prompts, selected_images_map)
+        return self._build_payload(sid, segments, session_data, first_frame_prompts, selected_images_map, reviews)

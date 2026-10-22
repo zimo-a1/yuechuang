@@ -53,6 +53,10 @@ class EpisodeOutline(Contract):
     number: int = Field(ge=1, le=24)
     title: Name
     summary: Text
+    # Empty defaults keep previously saved outlines readable. New model output is
+    # checked in validate_outline once these keys are present.
+    complete_event: str = Field(default="", max_length=120)
+    hook: str = Field(default="", max_length=120)
     characters: list[Name] = Field(min_length=1, max_length=30)
     event_ids: list[Name] = Field(min_length=1, max_length=100)
     creative_additions: str = Field(max_length=2000)
@@ -165,21 +169,50 @@ def validate_outline(value, bible, events, count):
     require(len(omitted) == len(set(omitted)), 'duplicate_omissions')
     require(not used.intersection(omitted), 'used_event_marked_omitted')
     require(used | set(omitted) == {e['id'] for e in events}, 'events_unaccounted_or_invented')
+    chosen = [event_id for episode in value['episodes'] for event_id in episode['event_ids']]
+    require(len(chosen) == len(set(chosen)), 'event_reused_across_episodes')
+    if any('complete_event' in episode or 'hook' in episode for episode in value['episodes']):
+        units = []
+        for episode in value['episodes']:
+            unit = str(episode.get('complete_event') or '').strip()
+            require(2 <= len(unit) <= 120, 'incomplete_episode_event')
+            units.append(unit)
+        require(len(units) == len(set(units)), 'repeated_episode_event')
+        opening = str(value['episodes'][0].get('hook') or '').strip()
+        require(2 <= len(opening) <= 120, 'missing_opening_hook')
     return value
+
+
+def visible_action(action):
+    text = str(action or '').strip()
+    if len(text) < 4:
+        return False
+    return not (text[0] in '“"「' and text[-1] in '”"」')
+
+
+def spoken_length(text):
+    return len(''.join(str(text).split()))
 
 
 def validate_episode(value, outline, duration, events, text):
     seen = set()
+    spoken = 0
     require(sum(s['duration'] for s in value['scenes']) == duration, 'duration_sum_mismatch')
     for scene in value['scenes']:
+        require(visible_action(scene['action']), 'scene_without_action')
         require(set(scene['characters']) <= set(outline['characters']), 'unknown_scene_character')
         require(set(scene['event_ids']) <= set(outline['event_ids']), 'unknown_scene_event')
         require(scene['event_ids'] or scene['creative_addition'], 'unattributed_scene')
         seen.update(scene['event_ids'])
         for line in scene['dialogue']:
             require(line['speaker'] in scene['characters'], 'unknown_speaker')
+            count = spoken_length(line['text'])
+            require(count <= 35, 'line_too_long')
+            spoken += count
             if not line['creative_addition']:
                 chunks = [e for e in events if e['id'] in scene['event_ids']]
                 require(any(line['text'] in text[e['chunk_start']:e['chunk_end']] for e in chunks), 'unmarked_new_dialogue')
+    # Spoken text has to fit the labeled duration. Silence and action may use the rest.
+    require(spoken / 4.5 <= duration * 1.15, 'dialogue_too_long')
     require(seen == set(outline['event_ids']), 'missing_planned_events')
     return value

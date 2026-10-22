@@ -3,7 +3,7 @@ export type NovelAction='analysis'|'direction'|'outline'|'script';
 export interface NovelPerson {name:string;aliases:string[];description:string}
 export interface NovelBible {summary:string;characters:NovelPerson[];relationships:{source:string;target:string;description:string}[];open_threads:string[]}
 export interface NovelDirection {premise:string;tone:string;focus_characters:string[];changes:string}
-export interface NovelEpisode {number:number;title:string;summary:string;characters:string[];event_ids:string[];creative_additions:string}
+export interface NovelEpisode {number:number;title:string;summary:string;complete_event?:string;hook?:string;characters:string[];event_ids:string[];creative_additions:string}
 export interface NovelOutline {episodes:NovelEpisode[];omissions:{event_id:string;reason:string}[]}
 export interface NovelEvent {id:string;description:string;quote:string;start:number;end:number;chapter_id:string;chapter_title:string;chunk_id:string}
 export interface NovelScene {location:string;characters:string[];duration:number;action:string;dialogue:{speaker:string;text:string;creative_addition:boolean}[];event_ids:string[];creative_addition:boolean}

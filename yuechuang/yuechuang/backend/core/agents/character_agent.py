@@ -18,6 +18,7 @@ from core.configuration_runtime import ContextThreadPoolExecutor as ThreadPoolEx
 
 from .base_agent import AgentInterface
 from core.service_settings import SettingsError
+from core import image_review
 from prompts.loader import load_prompt
 
 logger = logging.getLogger(__name__)
@@ -213,6 +214,10 @@ class CharacterDesignerAgent(AgentInterface):
 
                 # VLM 评估
                 eval_result = self._evaluate_with_vlm(save_path, desc, asset_type, vlm_model)
+                if eval_result.get("review_unavailable"):
+                    # 审核没做成：保留图片、标记“审核未完成”，不因此自动重画，避免额外扣费。
+                    logger.warning(f"[{asset_type}] {name} VLM审核未完成，保留图片待人工检查")
+                    return asset_id, save_path, eval_result
 
                 score = eval_result.get('score', 0)
                 issues = eval_result.get('issues', [])
@@ -288,31 +293,12 @@ class CharacterDesignerAgent(AgentInterface):
                 model=vlm_model
             )
 
-            # 解析结果
-            if result and isinstance(result, list):
-                result_text = result[0] if result else ""
-            elif isinstance(result, str):
-                result_text = result
-            else:
-                result_text = str(result)
-
-            # 尝试提取 JSON
-            import json
-            try:
-                # 找到 JSON 部分
-                import re
-                json_match = re.search(r'\{[^{}]*\}', result_text, re.DOTALL)
-                if json_match:
-                    eval_result = json.loads(json_match.group())
-                    return eval_result
-            except:
-                pass
-
-            return {"score": 5, "issues": ["评估解析失败"], "is_acceptable": True}
+            # 解析失败不再默认合格，记为“审核未完成”
+            return image_review.parse_review(result)
 
         except Exception as e:
             logger.warning(f'VLM evaluation failed: {type(e).__name__}')
-            return {"score": 5, "issues": [str(e)], "is_acceptable": True}
+            return image_review.unavailable(type(e).__name__)
 
     def _select_best_with_vlm(self, image_paths: List[str], name: str, description: str,
                                asset_type: str, species: str = "", vlm_model: str = "qwen3.5-plus") -> tuple:
@@ -356,25 +342,23 @@ class CharacterDesignerAgent(AgentInterface):
 
             logger.info("VLM selection received for %s", asset_type)
 
-            # 解析 JSON，提取 best_index
-            best_index = 0
-            try:
-                # 找到 JSON 开始和结束
-                json_start = result_text.find('{')
-                json_end = result_text.rfind('}') + 1
-                if json_start >= 0 and json_end > json_start:
-                    json_str = result_text[json_start:json_end]
-                    selection_result = json.loads(json_str)
-                    best_index = selection_result.get('best_index', 0)
-                    logger.info(f"[{asset_type}] {name} Parsed best_index: {best_index}")
-            except Exception as e:
-                logger.warning(f'[{asset_type}] {name} JSON parse failed: {type(e).__name__}, using last image')
-                best_index = len(image_paths) - 1
+            # 解析 JSON，提取 best_index；解析不出来就不选，沿用最后一轮的真实评估结果
+            selection_result = image_review.first_json_object(result_text) or {}
+            best_index = selection_result.get('best_index')
+            logger.info(f"[{asset_type}] {name} Parsed best_index: {best_index}")
 
             # 如果找到了 best_index，选择对应的图片
-            if best_index is not None and 0 <= best_index < len(image_paths):
+            if isinstance(best_index, int) and not isinstance(best_index, bool) and 0 <= best_index < len(image_paths):
                 best_path = image_paths[best_index]
-                best_eval = {"score": 8, "issues": [], "is_acceptable": True, "reason": f"VLM selected image {best_index + 1} of {len(image_paths)}"}
+                # 多轮都没达标，只是“相对最好”，不能记成合格
+                best_eval = {
+                    "score": selection_result.get("score"),
+                    "issues": selection_result.get("issues") or [],
+                    "hard_failures": selection_result.get("hard_failures") or [],
+                    "is_acceptable": False,
+                    "selected_by_vlm": True,
+                    "reason": f"多轮未达标，VLM 从 {len(image_paths)} 张中选出第 {best_index + 1} 张",
+                }
                 logger.info(f"[{asset_type}] {name} Selected image: {best_path}")
                 return best_path, best_eval
             else:
@@ -543,6 +527,7 @@ class CharacterDesignerAgent(AgentInterface):
 
                 logger.info(f"[CharacterAgent] Updated descriptions for session {sid}")
 
+            reviews = {}
             if regen_chars or regen_sets:
                 self._report_progress("角色设计", "重新生成中...", 10)
                 tasks = []
@@ -580,13 +565,14 @@ class CharacterDesignerAgent(AgentInterface):
                             pct = 10 + int(85 * done / max(total, 1))
                             if result_path:
                                 versions = self._list_versions(sid, atype, aid)
-                                self._report_progress("角色设计", f"完成: {fname}", pct, data={
+                                self._report_progress("角色设计", f"完成: {fname}", pct,
+                                                      data=self._review_progress(reviews, atype, aid, fname, result_path, eval_result, {
                                     "asset_complete": {
                                         "type": atype, "id": aid, "status": "done",
                                         "selected": result_path, "versions": versions,
                                         "evaluation": eval_result,
                                     }
-                                })
+                                }))
                             else:
                                 self._report_progress("角色设计", f"失败: {fname}", pct, data={
                                     "asset_complete": {
@@ -599,7 +585,8 @@ class CharacterDesignerAgent(AgentInterface):
                 await loop.run_in_executor(None, regen_run)
 
             self._report_progress("角色设计", "完成", 100)
-            return self._build_payload(sid, chars_desc, sets_desc, select_chars, select_sets)
+            return self._build_payload(sid, chars_desc, sets_desc, select_chars, select_sets,
+                                       reviews=reviews, previous=self._session_artifact(input_data, "character_design"))
 
         # ═══════════ 正常流程: 全量首次生成 ═══════════
         self._report_progress("角色设计", "读取剧本数据...", 5)
@@ -623,6 +610,8 @@ class CharacterDesignerAgent(AgentInterface):
         # 发送素材预览（含所有素材和当前状态）
         preview = self._build_preview(sid, chars_desc, sets_desc)
         self._report_progress("角色设计", "加载素材列表", 8, data={"assets_preview": preview})
+
+        reviews = {}
 
         def run():
             all_tasks = []
@@ -673,17 +662,18 @@ class CharacterDesignerAgent(AgentInterface):
 
                 for fut in as_completed(futs):
                     atype, aid, fname = futs[fut]
-                    _, result_path, _ = fut.result()
+                    _, result_path, eval_result = fut.result()
                     done += 1
                     pct = 10 + int(85 * done / max(total, 1))
                     if result_path:
                         versions = self._list_versions(sid, atype, aid)
-                        self._report_progress("角色设计", f"完成: {fname}", pct, data={
+                        self._report_progress("角色设计", f"完成: {fname}", pct,
+                                              data=self._review_progress(reviews, atype, aid, fname, result_path, eval_result, {
                             "asset_complete": {
                                 "type": atype, "id": aid, "status": "done",
                                 "selected": result_path, "versions": versions,
                             }
-                        })
+                        }))
                     else:
                         self._report_progress("角色设计", f"失败: {fname}", pct, data={
                             "asset_complete": {
@@ -697,13 +687,38 @@ class CharacterDesignerAgent(AgentInterface):
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, run)
 
-        return self._build_payload(sid, chars_desc, sets_desc)
+        return self._build_payload(sid, chars_desc, sets_desc, reviews=reviews,
+                                   previous=self._session_artifact(input_data, "character_design"))
+
+    @staticmethod
+    def _review_progress(reviews: dict, asset_type: str, asset_id: str, name: str,
+                         image_path: str, eval_result, data: dict) -> dict:
+        """把审核结果写进进度事件（任务事件可查），审核未完成时附带校验提醒。"""
+        review = image_review.summarize(eval_result, image_path)
+        reviews[(asset_type, asset_id)] = review
+        data["asset_complete"]["review"] = review
+        if review["status"] == "unavailable":
+            data["validation_warning"] = image_review.warning(asset_type, asset_id, name)
+        return data
+
+    @staticmethod
+    def _attach_reviews(items: list, asset_type: str, reviews: dict, previous: dict) -> None:
+        old = {item.get("id"): item for item in (previous or {}).get(asset_type, []) if isinstance(item, dict)}
+        for item in items:
+            review = reviews.get((asset_type, item["id"]))
+            if not (review and review.get("image") == item.get("selected")):
+                review = image_review.carried_review(old.get(item["id"]), item.get("selected"))
+            if review:
+                item["review"] = review
 
     def _build_payload(self, sid: str, chars_desc: dict, sets_desc: dict,
-                       selected_chars: dict = None, selected_sets: dict = None) -> dict:
+                       selected_chars: dict = None, selected_sets: dict = None,
+                       reviews: dict = None, previous: dict = None) -> dict:
         """构建返回给前端的 payload"""
         selected_chars = selected_chars or {}
         selected_sets = selected_sets or {}
+        reviews = reviews or {}
+        previous = previous if isinstance(previous, dict) else {}
 
         characters = []
         for asset_id, info in chars_desc.items():
@@ -719,12 +734,17 @@ class CharacterDesignerAgent(AgentInterface):
             sel = selected_sets.get(asset_id, "")
             settings_list.append(self._build_asset_info(sid, 'settings', asset_id, name, desc, sel))
 
+        self._attach_reviews(characters, "characters", reviews, previous)
+        self._attach_reviews(settings_list, "settings", reviews, previous)
+
         # 图片生成完成即为阶段完成，用户选择图片只是更新数据
         return {
             "payload": {
                 "session_id": sid,
                 "characters": characters,
                 "settings": settings_list,
+                "validation_warnings": (image_review.warnings_for("characters", characters)
+                                        + image_review.warnings_for("settings", settings_list)),
             },
             "stage_completed": True,
         }

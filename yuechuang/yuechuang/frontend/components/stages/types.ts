@@ -1,4 +1,4 @@
-import type { WorkflowArtifact } from '@/lib/workflowTypes';
+import type { ProjectMeta, WorkflowArtifact } from '@/lib/workflowTypes';
 
 export type StageStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'error' | 'stopped';
 
@@ -32,4 +32,6 @@ export interface StageViewProps {
   referenceArtifact?: WorkflowArtifact;
   /** 剧本阶段的 artifact（用于获取剧集标题） */
   scriptArtifact?: WorkflowArtifact;
+  /** 项目状态里的 meta，分镜时长回退和视频模式提示用。 */
+  projectMeta?: ProjectMeta;
 }

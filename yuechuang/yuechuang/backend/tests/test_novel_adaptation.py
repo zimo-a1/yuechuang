@@ -41,7 +41,9 @@ class FakeModel:
         elif 'requested_direction' in data:
             result={'premise':'追查信的来源','tone':'悬疑','focus_characters':['林舟'],'changes':'合并赶路过程，保留来信和入塔事件。'}
         elif 'events' in data:
-            result={'episodes':[{'number':i+1,'title':f'灯塔第{i+1}集','summary':'林舟踏上旅途。','characters':['林舟'],
+            result={'episodes':[{'number':i+1,'title':f'灯塔第{i+1}集','summary':'林舟踏上旅途。',
+                        'complete_event':f'第{i+1}集走完灯塔这一步','hook':'这封信是谁寄的' if i==0 else '',
+                        'characters':['林舟'],
                         'event_ids':[e['id'] for e in data['events'][i::data['episode_count']]],'creative_additions':'增加自言自语。'} for i in range(data['episode_count'])], 'omitted_event_reason':'仅聚焦灯塔主线，其余事件暂不纳入。', 'omissions':[]}
         else:
             result={'title':data['selected_episode']['title'],'scenes':[{'location':'灯塔','characters':['林舟'],

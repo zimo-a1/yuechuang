@@ -98,6 +98,16 @@ class SegmentDesign(OutputModel):
     shots: Annotated[list[DesignedShot], Field(min_length=1)]
 
 
+class MultiDesignedShot(OutputModel):
+    shot_id: Annotated[str, Field(pattern=r"^S\d+$")]
+    content: Text
+    shot_type: Text
+
+
+class MultiSegmentDesign(OutputModel):
+    shots: Annotated[list[MultiDesignedShot], Field(min_length=1, max_length=4)]
+
+
 class ContinuityPatch(OutputModel):
     segment_number: Number
     shot_number: Number
@@ -201,6 +211,12 @@ def validate_script(value):
 def validate_plan(value):
     result = validate_as(Annotated[list[PlanItem], Field(min_length=1)], value)
     _unique([unit for item in result for unit in item['unit_ids']])
+    return result
+
+
+def validate_multi_design(value):
+    result = validate_as(MultiSegmentDesign, value)
+    _unique([shot['shot_id'] for shot in result['shots']])
     return result
 
 

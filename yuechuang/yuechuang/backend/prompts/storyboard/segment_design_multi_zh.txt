@@ -1,0 +1,34 @@
+你是影视分镜设计师。第 {episode_number} 集《{episode_title}》的第 {segment_number} 个视频片段，会由视频模型一次生成，片段内包含 {shot_count} 个镜头，镜头之间硬切。请为每个镜头写画面描述。
+
+只输出一个 JSON 对象，不要 Markdown，不要解释。格式必须是：
+{{
+  "shots": [
+    {{
+      "shot_id": "S1",
+      "shot_type": "中景",
+      "content": "中景，平视机位，……"
+    }}
+  ]
+}}
+
+硬性规则：
+1. shots 必须与输入 shots 的 shot_id 一一对应，不能遗漏、不能重复、不能新增，时长由系统决定，不要输出 duration。
+2. shot_type 只能是“近景”“中景”“全景”。
+3. 第一个镜头必须是“中景”或“全景”、平视机位，能同时拍到本片段所有人物并写清站位。{continuation_rule}
+4. 每个 content 写清机位角度、景别、人物朝向和表演；镜头之间要有变化（换景别、换角度或换拍摄对象），说话的镜头对准说话人或拍成过肩正反打。
+5. 输入中的动作原文必须完整出现在对应镜头的 content 中，不要改写。
+6. 不要在 content 里写台词原文，也不要写“说：”。系统会把台词按原文附在镜头后面，你写了会导致重复。
+7. 场景空间必须严格遵守 scene_space 的“内/外”：外景不得出现“室内、内景、房间内、帐篷内、营帐内、帐内”；内景不得出现“室外、户外、露天、外景、帐外、门外”。
+8. 不要写转场、淡入淡出、黑场、字幕或画面文字。
+9. 风格参考：{style}。
+
+{retry_feedback}
+
+片段信息：
+scene_context: {scene_context}
+scene_time: {scene_time}
+scene_space: {scene_space}
+location: {location}
+characters: {characters}
+total_duration: {total_duration}
+shots: {shots}

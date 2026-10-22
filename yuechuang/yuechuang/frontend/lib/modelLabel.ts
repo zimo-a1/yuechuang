@@ -5,6 +5,15 @@ const KNOWN_NAMES: Record<string, string> = {
   'grok-video-1.5': 'Grok Video 1.5', 'minimax-h3-max-turbo': 'MiniMax H3 Max Turbo',
 };
 
+export function modelChannel(id: string) {
+  if (id.startsWith('svc/')) return id.split('/')[1]?.toLowerCase().includes('toapis') ? 'ToAPIs 通道' : '服务连接';
+  return '原供应商通道';
+}
+
+export function recommendModel(id: string) {
+  return id.startsWith('svc/') && (id.split('/').pop() || '').toLowerCase() === 'minimax-h3-max-turbo';
+}
+
 /** Presentation only: never change a saved model id or silently select a fallback. */
 export function modelDisplayName(value: string, label?: string): string {
   if (!value) return label || '未配置模型';

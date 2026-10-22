@@ -57,4 +57,10 @@ def planning_schema(kind, schema, data):
         limits = outline_limits(data['target_duration'])
         spec['$defs']['EpisodeOutline']['properties']['event_ids']['maxItems'] = limits['max_events_per_episode']
         spec['$defs']['EpisodeOutline']['properties']['characters']['maxItems'] = limits['max_characters_per_episode']
+        spec['$defs']['EpisodeOutline']['properties']['complete_event']['minLength'] = 2
+        spec['$defs']['EpisodeOutline']['properties']['hook']['description'] = '第 1 集必填，2—120 字，写开场就要让人往下看的具体钩子；其余集留空字符串'
+        required = spec['$defs']['EpisodeOutline'].setdefault('required', [])
+        for field in ('complete_event', 'hook'):
+            if field not in required:
+                required.append(field)
     return spec

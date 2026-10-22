@@ -1,5 +1,6 @@
 // Kept independent of components so list, workspace and regression tests share the same rules.
 export const PROJECT_STAGES = ['script_generation', 'character_design', 'storyboard', 'reference_generation', 'video_generation', 'post_production'];
+const STUDIO_STEP: Record<string, string> = {character_design: 'assets', storyboard: 'videos', reference_generation: 'videos', video_generation: 'videos', post_production: 'export'};
 export const STAGE_NAMES: Record<string, string> = {script_generation: '剧本', character_design: '素材', storyboard: '分镜', reference_generation: '分镜 · 参考图', video_generation: '视频', post_production: '成片'};
 type ProjectState = {status: Record<string, string>; confirmed_stages?: string[]; current_stage?: string};
 
@@ -19,7 +20,21 @@ export function projectProgress(project: ProjectState) {
 }
 
 export function projectHref(id: string, stage?: string) {
-  return `/?session=${encodeURIComponent(id)}${stage && PROJECT_STAGES.includes(stage) ? `&stage=${stage}` : ''}`;
+  const encoded = encodeURIComponent(id);
+  if (!stage || !PROJECT_STAGES.includes(stage)) return `/studio/${encoded}`;
+  return `/studio/${encoded}?step=${STUDIO_STEP[stage] || 'rewrite'}&stage=${stage}`;
+}
+
+/** A confirmation only records the gate. It never starts the next stage. */
+export function confirmationFollowUp(nextStage: string | undefined, sessionId: string) {
+  return {execute: false as const, href: nextStage ? projectHref(sessionId, nextStage) : null};
+}
+
+export function nextAssetId(prefix: 'char_' | 'set_', existing: string[]) {
+  const used = new Set(existing);
+  let number = 1;
+  while (used.has(`${prefix}${String(number).padStart(3, '0')}`)) number += 1;
+  return `${prefix}${String(number).padStart(3, '0')}`;
 }
 
 export const SOURCE_NAMES = {original: '一句话原创', ip: 'IP 改编', legacy: '历史项目'};

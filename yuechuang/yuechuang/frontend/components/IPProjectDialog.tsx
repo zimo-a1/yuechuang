@@ -1,8 +1,9 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
+import Link from 'next/link';
 import {useRouter} from 'next/navigation';
-import {ArrowRight, BookOpen, Loader2, X} from 'lucide-react';
+import {ArrowRight, BookOpen, FolderOpen, Loader2, Plus, X} from 'lucide-react';
 import {ipRequest, type IPDetailData, type IPVersion} from '@/lib/ipApi';
 import {isValidChapterRange} from '@/lib/chapterSelection';
 import {errorMessage} from '@/lib/workflowTypes';
@@ -17,7 +18,7 @@ const DIRECTIONS = [
   {label: '悬疑推进', text: '以核心悬念带动叙事，分集释放原著已有的线索与真相。保留关键人物关系，避免提前泄露后续转折。'},
 ];
 
-export default function IPProjectDialog({data, version, onClose}: {data: IPDetailData; version: IPVersion; onClose: () => void}) {
+export default function IPProjectDialog({data, version, onClose, startNew = false}: {data: IPDetailData; version: IPVersion; onClose: () => void; startNew?: boolean}) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const lock = useRef(false);
@@ -36,6 +37,7 @@ export default function IPProjectDialog({data, version, onClose}: {data: IPDetai
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [choosing, setChoosing] = useState(!startNew && data.projects.length > 0);
   const validRange = isValidChapterRange(first, last, version.chapters.length);
   const validTargets = Number.isInteger(episodes) && episodes >= 1 && episodes <= 24 && Number.isInteger(duration) && duration >= 15 && duration <= 600;
   const disabledReason = defaultsLoading ? '正在读取创作默认设置' : rangePending ? '请再选择一个结束章节' : !validRange ? '请选择有效章节范围' : !title.trim() ? '请填写项目名称' : !direction.trim() ? '请填写改编方向，也可使用下方示例' : !validTargets ? '集数须为 1–24，单集时长须为 15–600 秒的整数' : '';
@@ -66,7 +68,11 @@ export default function IPProjectDialog({data, version, onClose}: {data: IPDetai
     finally {setBusy(false); lock.current = false;}
   }
   return <dialog ref={dialog} className="hb-project-dialog hb-ip-project-dialog ex-ip-project-dialog" aria-labelledby="ip-project-title" onCancel={event => {event.preventDefault(); close();}}>
-    <form onSubmit={event => {event.preventDefault(); void create();}} onKeyDown={event => {if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();}}>
+    {choosing ? <div>
+      <header><div className="hb-dialog-icon"><BookOpen size={20}/></div><div><h2 id="ip-project-title">继续已有改编，还是新建？</h2><p>《{data.item.title}》已有 {data.projects.length} 个改编项目</p></div><button className="hb-dialog-close" type="button" aria-label="关闭" onClick={onClose}><X size={18}/></button></header>
+      <div className="hb-dialog-body yc-ip-existing"><p>继续已有项目会保留原著分析、分集大纲和已写剧集；新建项目需要重新分析所选章节。</p><div className="yc-ip-existing-list">{data.projects.map(project => <Link key={project.id} href={`/projects/${project.id}`} onClick={onClose}><FolderOpen size={20}/><div><b title={project.title}>{project.title}</b><small>正文版本 {project.version_number} · 第 {project.first_chapter}—{project.last_chapter} 章</small></div><span>继续 →</span></Link>)}</div></div>
+      <footer><small>新建只保存项目设置，不调用模型</small><button type="button" className="hb-project-button" onClick={onClose}>取消</button><button type="button" className="hb-project-button is-primary" onClick={() => setChoosing(false)}><Plus size={14}/>新建改编项目</button></footer>
+    </div> : <form onSubmit={event => {event.preventDefault(); void create();}} onKeyDown={event => {if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)) event.preventDefault();}}>
       <header><div className="hb-dialog-icon"><BookOpen size={20}/></div><div><h2 id="ip-project-title">创建改编项目</h2><p>《{data.item.title}》· 正文版本 {version.number}</p></div><button className="hb-dialog-close" type="button" aria-label="关闭创建改编项目" onClick={close} disabled={busy}><X size={18}/></button></header>
       <div className="hb-ip-project-body"><fieldset className="hb-dialog-body" disabled={busy} onChange={event => {if (!(event.target instanceof HTMLInputElement && event.target.closest('.ex-ip-chapter-search'))) setDirty(true);}}>
         <label>项目名称 <span aria-hidden="true">*</span><input autoFocus required maxLength={120} value={title} onChange={event => setTitle(event.target.value)}/></label>
@@ -78,6 +84,6 @@ export default function IPProjectDialog({data, version, onClose}: {data: IPDetai
         <p className="hb-ip-project-note">此处只保存项目，不调用模型。分析与生成在项目内确认后开始。</p>
       </fieldset>{error && <p role="alert" className="hb-project-error">{error}</p>}</div>
       <footer><small id="ip-create-help">{disabledReason || '准备就绪，可保存项目'}</small><button type="button" className="hb-project-button" onClick={close} disabled={busy}>取消</button><span title={disabledReason || undefined}><button className="hb-project-button is-primary" aria-describedby="ip-create-help" disabled={busy || !!disabledReason}>{busy ? <Loader2 size={14} className="animate-spin"/> : <ArrowRight size={14}/>} {busy ? '创建中…' : '保存并进入项目'}</button></span></footer>
-    </form>
+    </form>}
   </dialog>;
 }
